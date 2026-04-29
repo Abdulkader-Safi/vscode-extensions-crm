@@ -13,6 +13,7 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import { getSupabase } from "../lib/supabase";
     import { auth } from "../lib/stores/auth.svelte";
+    import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
 
@@ -66,7 +67,9 @@
     }
 
     async function load() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const { data } = await getSupabase()
             .from("leads")
             .select("*")
@@ -106,13 +109,23 @@
     }
 
     async function remove(id: string) {
-        if (!confirm("Delete lead?")) return;
+        if (
+            !(await confirm({
+                title: "Delete lead?",
+                confirmLabel: "Delete",
+                destructive: true,
+            }))
+        ) {
+            return;
+        }
         await getSupabase().from("leads").delete().eq("id", id);
         load();
     }
 
     async function convert(lead: Lead) {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const supa = getSupabase();
         const { data, error } = await supa
             .from("clients")
@@ -199,7 +212,7 @@
                     </span>
                 </div>
                 <div
-                    class="min-h-[200px] flex-1 space-y-2 rounded-lg border border-vscode-card-border bg-vscode-muted-bg p-2"
+                    class="min-h-50 flex-1 space-y-2 rounded-lg border border-vscode-card-border bg-vscode-muted-bg p-2"
                     use:dndzone={{
                         items: columns[stage.id] ?? [],
                         flipDurationMs: 150,

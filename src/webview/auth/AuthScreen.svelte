@@ -39,20 +39,26 @@
                         data: { display_name: displayName || undefined },
                     },
                 });
-                if (err) throw err;
+                if (err) {
+                    throw err;
+                }
                 toast.success("Account created — check your inbox to confirm.");
             } else if (mode === "signin") {
                 const { error: err } = await supa.auth.signInWithPassword({
                     email,
                     password,
                 });
-                if (err) throw err;
+                if (err) {
+                    throw err;
+                }
             } else if (mode === "magic") {
                 const { error: err } = await supa.auth.signInWithOtp({
                     email,
                     options: { emailRedirectTo: config.redirectUri },
                 });
-                if (err) throw err;
+                if (err) {
+                    throw err;
+                }
                 magicSent = true;
                 toast.success("Magic link sent — check your inbox.");
             }
@@ -75,8 +81,12 @@
                         skipBrowserRedirect: true,
                     },
                 });
-            if (err) throw err;
-            if (!data?.url) throw new Error("No OAuth URL returned");
+            if (err) {
+                throw err;
+            }
+            if (!data?.url) {
+                throw new Error("No OAuth URL returned");
+            }
             await request("auth/oauth-start", { authorizeUrl: data.url });
             toast.info(
                 `Continue in your browser to finish ${provider} sign-in.`,
@@ -103,9 +113,7 @@
                     {:else if mode === "magic"}Magic link sign-in
                     {:else}Welcome back{/if}
                 </div>
-                <div class="text-xs text-vscode-description">
-                    vs-crm
-                </div>
+                <div class="text-xs text-vscode-description">vs-crm</div>
             </div>
         </div>
 

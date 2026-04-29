@@ -39,7 +39,9 @@
     );
 
     onMount(async () => {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const supa = getSupabase();
         const userId = auth.user.id;
 

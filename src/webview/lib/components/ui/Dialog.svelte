@@ -36,7 +36,9 @@
     }
 
     function onKey(e: KeyboardEvent) {
-        if (e.key === "Escape") close();
+        if (e.key === "Escape") {
+            close();
+        }
     }
 </script>
 

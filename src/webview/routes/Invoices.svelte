@@ -1,13 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
-    import {
-        Plus,
-        Trash2,
-        Pencil,
-        FileDown,
-        Check,
-    } from "lucide-svelte";
+    import { Plus, Trash2, Pencil, FileDown, Check } from "lucide-svelte";
     import jsPDF from "jspdf";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
@@ -21,6 +15,7 @@
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
     import { getSupabase } from "../lib/supabase";
     import { auth } from "../lib/stores/auth.svelte";
+    import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
 
@@ -98,18 +93,20 @@
     const computed = $derived.by(() => {
         const subtotal = items.reduce(
             (s, i) => s + Number(i.quantity) * Number(i.unit_price),
-            0
+            0,
         );
         const tax_amount = (subtotal * Number(form.tax_rate)) / 100;
         const total = Math.max(
             0,
-            subtotal + tax_amount - Number(form.discount)
+            subtotal + tax_amount - Number(form.discount),
         );
         return { subtotal, tax_amount, total };
     });
 
     async function load() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const supa = getSupabase();
         const [i, c, p] = await Promise.all([
             supa
@@ -181,19 +178,34 @@
                           (patch.quantity ?? it.quantity) *
                           (patch.unit_price ?? it.unit_price),
                   }
-                : it
+                : it,
         );
     }
     function removeItem(idx: number) {
         items = items.filter((_, i) => i !== idx);
-        if (items.length === 0) items = [blankItem(0)];
+        if (items.length === 0) {
+            items = [blankItem(0)];
+        }
     }
     function addItem() {
         items = [...items, blankItem(items.length)];
     }
 
+    function invoiceSaveErrorMessage(err: {
+        code?: string;
+        message: string;
+    }): string {
+        // Postgres unique-violation on (user_id, invoice_number)
+        if (err.code === "23505") {
+            return "Invoice number already in use — pick another.";
+        }
+        return err.message;
+    }
+
     async function save() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         if (!form.invoice_number.trim()) {
             toast.error("Invoice number required");
             return;
@@ -223,10 +235,13 @@
                 .update(payload)
                 .eq("id", editing.id);
             if (error) {
-                toast.error(error.message);
+                toast.error(invoiceSaveErrorMessage(error));
                 return;
             }
-            await supa.from("invoice_items").delete().eq("invoice_id", editing.id);
+            await supa
+                .from("invoice_items")
+                .delete()
+                .eq("invoice_id", editing.id);
         } else {
             const { data, error } = await supa
                 .from("invoices")
@@ -234,7 +249,7 @@
                 .select()
                 .single();
             if (error) {
-                toast.error(error.message);
+                toast.error(invoiceSaveErrorMessage(error));
                 return;
             }
             invId = data.id;
@@ -251,7 +266,9 @@
                     total: Number(i.quantity) * Number(i.unit_price),
                     position: idx,
                 }));
-            if (rows.length) await supa.from("invoice_items").insert(rows);
+            if (rows.length) {
+                await supa.from("invoice_items").insert(rows);
+            }
         }
         toast.success(editing ? "Invoice updated" : "Invoice created");
         open = false;
@@ -259,7 +276,16 @@
     }
 
     async function remove(id: string) {
-        if (!confirm("Delete?")) return;
+        if (
+            !(await confirm({
+                title: "Delete invoice?",
+                message: "Line items will be removed with it.",
+                confirmLabel: "Delete",
+                destructive: true,
+            }))
+        ) {
+            return;
+        }
         await getSupabase().from("invoices").delete().eq("id", id);
         load();
     }
@@ -294,18 +320,24 @@
                 profile.profile?.display_name ||
                 "Invoice",
             14,
-            18
+            18,
         );
         doc.setTextColor(0);
         doc.setFontSize(11);
         doc.text(`Invoice ${inv.invoice_number}`, 14, 42);
         doc.text(`Issued: ${inv.issue_date}`, 14, 49);
-        if (inv.due_date) doc.text(`Due: ${inv.due_date}`, 14, 56);
+        if (inv.due_date) {
+            doc.text(`Due: ${inv.due_date}`, 14, 56);
+        }
         if (client) {
             doc.text("Bill to:", 130, 42);
             doc.text(client.name, 130, 49);
-            if (client.company) doc.text(client.company, 130, 56);
-            if (client.email) doc.text(client.email, 130, 63);
+            if (client.company) {
+                doc.text(client.company, 130, 56);
+            }
+            if (client.email) {
+                doc.text(client.email, 130, 63);
+            }
         }
         let y = 80;
         doc.setFillColor(245, 245, 245);
@@ -325,7 +357,11 @@
         for (const it of rows) {
             doc.text(String(it.description).slice(0, 70), 16, y);
             doc.text(String(it.quantity), 130, y);
-            doc.text(formatCurrency(Number(it.unit_price), inv.currency), 150, y);
+            doc.text(
+                formatCurrency(Number(it.unit_price), inv.currency),
+                150,
+                y,
+            );
             doc.text(formatCurrency(Number(it.total), inv.currency), 178, y);
             y += 7;
         }
@@ -333,26 +369,26 @@
         doc.text(
             `Subtotal: ${formatCurrency(Number(inv.subtotal), inv.currency)}`,
             140,
-            y
+            y,
         );
         y += 6;
         doc.text(
             `Tax: ${formatCurrency(Number(inv.tax_amount), inv.currency)}`,
             140,
-            y
+            y,
         );
         y += 6;
         doc.text(
             `Discount: ${formatCurrency(Number(inv.discount), inv.currency)}`,
             140,
-            y
+            y,
         );
         y += 6;
         doc.setFontSize(13);
         doc.text(
             `Total: ${formatCurrency(Number(inv.total), inv.currency)}`,
             140,
-            y
+            y,
         );
         if (inv.notes) {
             y += 14;
@@ -413,7 +449,9 @@
                             <tr
                                 class="group border-b border-vscode-border last:border-0"
                             >
-                                <td class="py-2 font-medium">{inv.invoice_number}</td>
+                                <td class="py-2 font-medium"
+                                    >{inv.invoice_number}</td
+                                >
                                 <td class="py-2 text-vscode-description">
                                     {clients.find((c) => c.id === inv.client_id)
                                         ?.name ?? "—"}
@@ -422,14 +460,16 @@
                                     {inv.issue_date}
                                 </td>
                                 <td class="py-2">
-                                    <Badge tone={statusTone[inv.status] ?? "muted"}>
+                                    <Badge
+                                        tone={statusTone[inv.status] ?? "muted"}
+                                    >
                                         {inv.status}
                                     </Badge>
                                 </td>
                                 <td class="py-2 text-right font-semibold">
                                     {formatCurrency(
                                         Number(inv.total),
-                                        inv.currency
+                                        inv.currency,
                                     )}
                                 </td>
                                 <td class="py-2 text-right">
@@ -485,11 +525,7 @@
     {/if}
 </div>
 
-<Dialog
-    bind:open
-    title={editing ? "Edit invoice" : "New invoice"}
-    size="xl"
->
+<Dialog bind:open title={editing ? "Edit invoice" : "New invoice"} size="xl">
     <div class="grid gap-3 sm:grid-cols-3">
         <Field label="Invoice #">
             <Input bind:value={form.invoice_number} />
@@ -547,7 +583,7 @@
                         oninput={(e) =>
                             updateItem(idx, {
                                 quantity: Number(
-                                    (e.target as HTMLInputElement).value
+                                    (e.target as HTMLInputElement).value,
                                 ),
                             })}
                     />
@@ -560,11 +596,13 @@
                         oninput={(e) =>
                             updateItem(idx, {
                                 unit_price: Number(
-                                    (e.target as HTMLInputElement).value
+                                    (e.target as HTMLInputElement).value,
                                 ),
                             })}
                     />
-                    <div class="col-span-1 flex items-center justify-end text-xs">
+                    <div
+                        class="col-span-1 flex items-center justify-end text-xs"
+                    >
                         {formatCurrency(it.total, profile.currency)}
                     </div>
                     <Button

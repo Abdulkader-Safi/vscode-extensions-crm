@@ -4,17 +4,12 @@ import {
   pingSupabase,
   runMigrations,
 } from "./extension/bootstrap/orchestrator";
-import {
-  BOOTSTRAP_FUNCTION_SQL,
-  TEARDOWN_FUNCTION_SQL,
-} from "./extension/bootstrap/migrations";
-import { CrmUriHandler, getRedirectUri } from "./extension/auth/uriHandler";
+import { CrmUriHandler } from "./extension/auth/uriHandler";
 import type {
   HostEvent,
   MigrationProgress,
   WebviewRequest,
   ResponseEnvelope,
-  AuthTokens,
 } from "./shared/messages";
 
 export class CrmWebviewProvider {
@@ -28,6 +23,7 @@ export class CrmWebviewProvider {
     private readonly _extensionUri: vscode.Uri,
     private readonly _secrets: CrmSecrets,
     private readonly _uriHandler: CrmUriHandler,
+    private readonly _redirectUri: string,
   ) {
     this._panel = panel;
     this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
@@ -55,6 +51,7 @@ export class CrmWebviewProvider {
     extensionUri: vscode.Uri,
     secrets: CrmSecrets,
     uriHandler: CrmUriHandler,
+    redirectUri: string,
   ) {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
@@ -81,6 +78,7 @@ export class CrmWebviewProvider {
       extensionUri,
       secrets,
       uriHandler,
+      redirectUri,
     );
   }
 
@@ -89,7 +87,9 @@ export class CrmWebviewProvider {
     this._panel.dispose();
     while (this._disposables.length) {
       const d = this._disposables.pop();
-      if (d) d.dispose();
+      if (d) {
+        d.dispose();
+      }
     }
   }
 
@@ -110,7 +110,7 @@ export class CrmWebviewProvider {
           supabaseUrl: (await this._secrets.getUrl()) ?? null,
           anonKey: (await this._secrets.getAnonKey()) ?? null,
           bootstrapped: this._secrets.isBootstrapped(),
-          redirectUri: getRedirectUri(),
+          redirectUri: this._redirectUri,
         };
       }
       case "boot/save-creds": {
@@ -141,11 +141,15 @@ export class CrmWebviewProvider {
             });
           },
         );
+        // Migrations applied — service-role key is no longer needed.
+        // Drop it now so closing the webview before "Continue to sign-in"
+        // doesn't leak the key. On failure (caught above) we leave it so
+        // the user can retry without re-pasting.
+        await this._secrets.clearServiceRoleKey();
         return result;
       }
       case "boot/finalize": {
         await this._secrets.setBootstrapped(true);
-        await this._secrets.clearServiceRoleKey();
         return { ok: true };
       }
       case "boot/reset": {
@@ -214,16 +218,6 @@ export class CrmWebviewProvider {
 
   private _sendEvent(event: HostEvent) {
     this._panel.webview.postMessage(event);
-  }
-
-  // For external dispatch (e.g. from CrmUriHandler before panel exists).
-  public static notifyAuthTokens(tokens: AuthTokens) {
-    if (!CrmWebviewProvider.currentPanel) return;
-    CrmWebviewProvider.currentPanel._sendEvent({
-      direction: "event",
-      type: "auth/tokens",
-      payload: tokens,
-    });
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {

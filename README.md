@@ -1,145 +1,96 @@
-# Svelte Starter - VSCode Extension
+# vs-crm
 
-A VSCode extension template built with Svelte 5, TailwindCSS, and svelte-spa-router for building modern webview-based extensions.
+A complete CRM that runs **inside VS Code**, on top of **your own Supabase project**. Manage clients, leads, projects, tasks, time, invoices (with PDF), expenses, and reports — without ever leaving the editor.
+
+Your data stays in your Supabase project. The extension never sees a third-party server.
 
 ## Features
 
-This extension includes two example pages demonstrating VSCode webview API integration:
+- **Dashboard** — at-a-glance metrics: clients, active projects, unpaid invoices, monthly revenue, recent activity.
+- **Clients** — CRUD with tags, search, contact info, communication history.
+- **Leads** — Kanban pipeline (New → Contacted → Proposal → Won / Lost) with drag-and-drop.
+- **Projects** — Linked to clients, status tracking, budget, dates.
+- **Tasks** — List view with priority, status, due dates, and a built-in time tracker that writes to `time_entries`.
+- **Invoices** — Line-item editor, tax/discount, status (draft/sent/paid/overdue), branded PDF export via `jsPDF`.
+- **Expenses** — Categorized cost tracking, monthly aggregates, project allocation.
+- **Reports** — Revenue vs. expenses (last 6 months), top clients, CSV export.
+- **Settings** — Profile, currency, default tax rate, brand color (used on PDFs).
+- **Auth** — Email/password, magic link, and OAuth (Google, GitHub) all routed back to VS Code via a custom URI handler.
+- **Native theming** — Tailwind tokens bound to `--vscode-*` CSS variables. Light, dark, and high-contrast themes inherit automatically.
 
-1. **Notification Page** - Send messages from the webview to VSCode to show notifications
-2. **Directory Listing Page** - Request data from VSCode and display it in the Svelte UI
+## Getting started
 
-## Project Structure
+### 1. Install
+
+Install **vs-crm** from the VS Code Marketplace, or via the command line:
+
+```bash
+code --install-extension abdulkadersafi.vs-crm
+```
+
+### 2. Create (or open) a Supabase project
+
+You'll need:
+
+- The **Project URL** (`https://xxxxx.supabase.co`)
+- The **anon (public) key**
+- The **service_role key** (used **once** during onboarding, then discarded)
+
+Find them in your Supabase dashboard under **Settings → API**.
+
+### 3. Run the onboarding
+
+Open the Command Palette and run **`vs-crm: Open`**. The extension walks you through:
+
+1. Pasting your Supabase URL + anon key + service_role key.
+2. Pasting a small SQL helper into the Supabase SQL Editor (one-time, the extension drops it for you when bootstrap finishes).
+3. Auto-applying the schema migrations (clients, projects, tasks, invoices, etc., all with row-level security).
+4. Signing in to your new account.
+
+### 4. Add the redirect URI to Supabase
+
+Before magic-link or OAuth sign-in will work, you must add this exact URI to your Supabase project's **Authentication → URL Configuration → Redirect URLs**:
 
 ```
-.
-├── src/
-│   ├── extension.ts              # Extension entry point
-│   ├── WebviewProvider.ts        # Webview panel provider
-│   └── webview/
-│       ├── index.ts              # Svelte app entry point (mount)
-│       ├── index.css             # TailwindCSS imports
-│       ├── App.svelte            # Main app with routing
-│       ├── global.d.ts           # Type declarations (svelte, css)
-│       ├── vscode.d.ts           # acquireVsCodeApi() type
-│       ├── vscodeApi.ts          # VS Code API wrapper
-│       └── pages/
-│           ├── NotificationPage.svelte
-│           └── DirectoryListPage.svelte
-├── dist/                         # Build output
-├── esbuild.js                    # Build configuration
-├── svelte.config.js              # Svelte tooling config
-├── tailwind.config.js            # TailwindCSS configuration
-└── postcss.config.js             # PostCSS configuration
+vscode://abdulkadersafi.vs-crm/auth-callback
 ```
+
+The onboarding screen displays this with a Copy button.
+
+For Google / GitHub OAuth, also configure the provider in **Authentication → Providers** with your own OAuth client IDs.
+
+## Why your own Supabase?
+
+Most CRMs lock you into their database. vs-crm gives you full ownership: you can query the tables directly with `psql`, back them up however you like, run other tools against them, and the extension never proxies your data.
+
+## Schema
+
+The extension provisions:
+
+- `profiles` — user metadata (currency, tax rate, brand color, etc.)
+- `clients`, `leads`, `projects`, `tasks`, `time_entries`
+- `invoices`, `invoice_items`, `expenses`
+- `communication_logs`, `notifications`
+- `_vscrm_migrations` — internal, tracks applied migrations
+
+All user data is row-level security-scoped to `auth.uid() = user_id`.
+
+## Reset
+
+Need to start over (different Supabase project, etc.)? Run **`vs-crm: Reset Onboarding`**. This clears your stored credentials in VS Code's `SecretStorage` but **does not touch the data in your Supabase project** — drop tables manually if you want a clean slate there.
 
 ## Development
 
-### Prerequisites
-
-- Node.js and npm
-- VSCode
-
-### Setup
-
-1. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-2. Build the extension:
-
-   ```bash
-   npm run compile
-   ```
-
-3. Watch for changes:
-
-   ```bash
-   npm run watch
-   ```
-
-### Running the Extension
-
-1. Press `F5` in VSCode to open a new Extension Development Host window
-2. Open the Command Palette (`Cmd+Shift+P` on Mac, `Ctrl+Shift+P` on Windows/Linux)
-3. Run the command: **Open Svelte View**
-4. The Svelte webview will open in a new panel in the main editor area
-
-## Examples
-
-### Notification Button
-
-Navigate to the "Notification" page and click the button to send a notification to VSCode. This demonstrates:
-
-- Message passing from webview to extension
-- Using `vscode.window.showInformationMessage()`
-
-### Directory Listing
-
-Navigate to the "Directory" page to see the contents of your workspace. This demonstrates:
-
-- Requesting data from the extension
-- Receiving and displaying data in Svelte
-- Using VSCode's file system API
-
-## Technology Stack
-
-- **Svelte 5** - UI framework (runes syntax: `$state`, `$effect`, `$props`)
-- **svelte-spa-router** - Hash-based client-side routing (ideal for webviews)
-- **TailwindCSS v4** - Utility-first CSS framework
-- **TypeScript** - Type safety
-- **esbuild** + **esbuild-svelte** - Fast bundler with Svelte support
-- **PostCSS** - CSS processing
-
-## Build Scripts
-
-- `npm run compile` - Build the extension
-- `npm run watch` - Watch mode for development
-- `npm run check-types` - Type checking (tsc + svelte-check)
-- `npm run lint` - Lint the code
-- `npm test` - Run tests
-
-## VSCode API Communication
-
-The extension uses the VSCode webview messaging API:
-
-**From Webview to Extension:**
-
-```typescript
-vscode.postMessage({
-  type: "showNotification",
-  message: "Hello from Svelte!",
-});
+```bash
+git clone <this-repo>
+cd vs-crm
+npm install
+npm run watch       # esbuild watch + svelte-check watch
+# In VS Code, press F5 to launch the Extension Development Host
 ```
 
-**From Extension to Webview:**
-
-```typescript
-panel.webview.postMessage({
-  type: "directoryContents",
-  data: { contents: [...] },
-});
-```
-
-## Customization
-
-### Adding New Pages
-
-1. Create a new `.svelte` component in `src/webview/pages/`
-2. Add a route in `src/webview/App.svelte` (update the `routes` object)
-3. Add a navigation link in the nav bar using `use:link`
-
-### Styling
-
-The extension uses TailwindCSS v4. All Tailwind utilities are available. The theme uses a dark color scheme optimized for VSCode.
-
-## Commands
-
-- `Open Svelte View` - Opens the Svelte webview panel
-- `Hello World` - Shows a simple notification (example command)
+OAuth and magic-link callbacks require the extension to be **installed** (not just running in the dev host). Build a `.vsix` with `vsce package` and `code --install-extension vs-crm-*.vsix` to test those flows end-to-end.
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE).

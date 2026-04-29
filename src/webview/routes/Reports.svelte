@@ -34,7 +34,9 @@
     let clients = $state<Client[]>([]);
 
     onMount(async () => {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const supa = getSupabase();
         const [i, e, c] = await Promise.all([
             supa.from("invoices").select("*").eq("user_id", auth.user.id),
@@ -55,13 +57,19 @@
         const m: Record<string, { revenue: number; expenses: number }> = {};
         months.forEach((k) => (m[k] = { revenue: 0, expenses: 0 }));
         for (const i of invoices) {
-            if (i.status !== "paid" || !i.paid_at) continue;
+            if (i.status !== "paid" || !i.paid_at) {
+                continue;
+            }
             const k = i.paid_at.slice(0, 7);
-            if (m[k]) m[k].revenue += Number(i.total);
+            if (m[k]) {
+                m[k].revenue += Number(i.total);
+            }
         }
         for (const e of expenses) {
             const k = e.expense_date.slice(0, 7);
-            if (m[k]) m[k].expenses += Number(e.amount);
+            if (m[k]) {
+                m[k].expenses += Number(e.amount);
+            }
         }
         return months.map((k) => ({
             label: k.slice(5) + "/" + k.slice(2, 4),
@@ -73,7 +81,9 @@
     const topClients = $derived.by(() => {
         const t: Record<string, number> = {};
         for (const i of invoices) {
-            if (i.status !== "paid" || !i.client_id) continue;
+            if (i.status !== "paid" || !i.client_id) {
+                continue;
+            }
             t[i.client_id] = (t[i.client_id] ?? 0) + Number(i.total);
         }
         return Object.entries(t)
@@ -88,10 +98,10 @@
     const totalRev = $derived(
         invoices
             .filter((i) => i.status === "paid")
-            .reduce((s, i) => s + Number(i.total), 0)
+            .reduce((s, i) => s + Number(i.total), 0),
     );
     const totalExp = $derived(
-        expenses.reduce((s, e) => s + Number(e.amount), 0)
+        expenses.reduce((s, e) => s + Number(e.amount), 0),
     );
     const profit = $derived(totalRev - totalExp);
 
@@ -171,9 +181,7 @@
         }
         const csv = rows
             .map((r) =>
-                r
-                    .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-                    .join(",")
+                r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
             )
             .join("\n");
         const blob = new Blob([csv], { type: "text/csv" });
@@ -187,10 +195,7 @@
 </script>
 
 <div class="p-6">
-    <PageHeader
-        title="Reports"
-        description="See where your business stands."
-    >
+    <PageHeader title="Reports" description="See where your business stands.">
         {#snippet actions()}
             <Button variant="outline" onclick={exportCsv}>
                 <Download class="h-4 w-4" /> Export CSV

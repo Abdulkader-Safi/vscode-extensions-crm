@@ -1,3 +1,10 @@
+-- Tracking table for applied migrations. Created first so every migration
+-- (including this one) can be recorded after it succeeds.
+CREATE TABLE IF NOT EXISTS public._vscrm_migrations (
+  name TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Profiles
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,

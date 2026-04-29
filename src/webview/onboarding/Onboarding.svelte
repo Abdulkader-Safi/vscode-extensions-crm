@@ -20,7 +20,7 @@
         MigrationProgress,
         RunMigrationsResult,
     } from "../../shared/messages";
-    import { BOOTSTRAP_FUNCTION_SNIPPET } from "./bootstrapSnippet";
+    import { BOOTSTRAP_FUNCTION_SNIPPET } from "../../shared/bootstrapSnippet";
 
     import Button from "../lib/components/ui/Button.svelte";
     import Input from "../lib/components/ui/Input.svelte";
@@ -33,13 +33,7 @@
     }
     let { onDone }: Props = $props();
 
-    type Step =
-        | "welcome"
-        | "paste"
-        | "verify"
-        | "bootstrap"
-        | "migrating"
-        | "done";
+    type Step = "welcome" | "paste" | "bootstrap" | "migrating" | "done";
     let step = $state<Step>("welcome");
 
     let url = $state("");
@@ -63,13 +57,20 @@
             undefined,
         )) as BootConfig;
         redirectUri = cfg.redirectUri;
-        if (cfg.supabaseUrl) url = cfg.supabaseUrl;
-        if (cfg.anonKey) anonKey = cfg.anonKey;
+        if (cfg.supabaseUrl) {
+            url = cfg.supabaseUrl;
+        }
+        if (cfg.anonKey) {
+            anonKey = cfg.anonKey;
+        }
 
         unsubProgress = on("boot/migration-progress", (p) => {
             const idx = migrations.findIndex((m) => m.name === p.name);
-            if (idx === -1) migrations.push(p);
-            else migrations[idx] = p;
+            if (idx === -1) {
+                migrations.push(p);
+            } else {
+                migrations[idx] = p;
+            }
         });
     });
 
@@ -162,9 +163,7 @@
                 <Sparkles class="h-5 w-5" />
             </div>
             <div>
-                <div class="text-base font-semibold">
-                    Welcome to vs-crm
-                </div>
+                <div class="text-base font-semibold">Welcome to vs-crm</div>
                 <div class="text-xs text-vscode-description">
                     Connect to your Supabase project — your data stays in your
                     account.
@@ -325,9 +324,9 @@
                     <p class="text-vscode-description">
                         Postgres won't let us run schema changes via the public
                         API alone. Paste the snippet below into your Supabase
-                        SQL Editor and run it once. vs-crm will use it
-                        to apply migrations, then drop it again. Safe to delete
-                        manually if you prefer.
+                        SQL Editor and run it once. vs-crm will use it to apply
+                        migrations, then drop it again. Safe to delete manually
+                        if you prefer.
                     </p>
 
                     <div class="relative">

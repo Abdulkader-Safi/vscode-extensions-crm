@@ -1,15 +1,44 @@
 {
   "name": "vs-crm",
   "displayName": "vs-crm",
-  "publisher": "vs-crm",
   "description": "A complete CRM (clients, projects, tasks, invoices, expenses, reports) running inside VS Code on top of your own Supabase project.",
   "version": "0.0.1",
+  "publisher": "abdulkadersafi",
+  "license": "MIT",
   "engines": {
-    "vscode": "^1.106.1"
+    "vscode": "^1.116.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
   ],
+  "keywords": [
+    "crm",
+    "supabase",
+    "freelance",
+    "invoice",
+    "invoicing",
+    "clients",
+    "projects",
+    "tasks",
+    "time tracking",
+    "expenses",
+    "svelte"
+  ],
+  "author": {
+    "name": "Safi",
+    "email": "safi.abdulkader@gmail.com",
+    "url": "https://abdulkadersafi.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Abdulkader-Safi/vscode-extensions-ImageMagick.git"
+  },
+  "homepage": "https://abdulkadersafi.com",
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
   "activationEvents": [
     "onCommand:vs-crm.open",
     "onCommand:vs-crm.resetOnboarding"
@@ -35,7 +64,7 @@
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "package": "npm run check-types && node esbuild.js --production",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",

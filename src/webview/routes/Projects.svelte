@@ -14,6 +14,7 @@
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
     import { getSupabase } from "../lib/supabase";
     import { auth } from "../lib/stores/auth.svelte";
+    import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
 
@@ -54,7 +55,9 @@
     let form = $state({ ...blank });
 
     async function load() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const supa = getSupabase();
         const [p, c] = await Promise.all([
             supa
@@ -121,7 +124,16 @@
     }
 
     async function remove(id: string) {
-        if (!confirm("Delete project?")) return;
+        if (
+            !(await confirm({
+                title: "Delete project?",
+                message: "Tasks linked to this project will be removed too.",
+                confirmLabel: "Delete",
+                destructive: true,
+            }))
+        ) {
+            return;
+        }
         await getSupabase().from("projects").delete().eq("id", id);
         load();
     }

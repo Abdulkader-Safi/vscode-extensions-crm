@@ -9,6 +9,7 @@
 
     import AppLayout from "./lib/components/AppLayout.svelte";
     import Toaster from "./lib/components/ui/Toaster.svelte";
+    import ConfirmDialog from "./lib/components/ui/ConfirmDialog.svelte";
     import Spinner from "./lib/components/ui/Spinner.svelte";
 
     import Onboarding from "./onboarding/Onboarding.svelte";
@@ -48,7 +49,9 @@
         await config.load();
         if (config.isReadyForApp) {
             await auth.init();
-            if (auth.user) await profile.load();
+            if (auth.user) {
+                await profile.load();
+            }
         }
     });
 
@@ -88,4 +91,5 @@
         </AppLayout>
     {/if}
     <Toaster />
+    <ConfirmDialog />
 </QueryClientProvider>

@@ -21,9 +21,11 @@ const sharedRules = {
 };
 
 export default [
-  // TypeScript files (extension host + webview .ts)
+  // TypeScript files — including Svelte 5 runes-mode `.svelte.ts` / `.svelte.js`
+  // (parsed with the standard TS parser; Svelte runes are just function calls
+  // outside templates, no special parsing needed).
   {
-    files: ["**/*.ts"],
+    files: ["**/*.ts", "**/*.svelte.ts", "**/*.svelte.js"],
     plugins: sharedPlugins,
     languageOptions: {
       parser: tsParser,
@@ -50,6 +52,11 @@ export default [
       },
       globals: { ...globals.browser },
     },
-    rules: sharedRules,
+    rules: {
+      ...sharedRules,
+      // `new Date()` inside `$derived` is intentional: we want "now" each time
+      // the derivation runs, not a reactive wrapper.
+      "svelte/prefer-svelte-reactivity": "off",
+    },
   },
 ];

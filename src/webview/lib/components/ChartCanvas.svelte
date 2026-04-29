@@ -1,10 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
-    import {
-        Chart,
-        type ChartConfiguration,
-        registerables,
-    } from "chart.js";
+    import { Chart, type ChartConfiguration, registerables } from "chart.js";
 
     Chart.register(...registerables);
 
@@ -18,12 +14,16 @@
     let chart: Chart | null = null;
 
     onMount(() => {
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         chart = new Chart(canvas, config);
     });
 
     $effect(() => {
-        if (!chart) return;
+        if (!chart) {
+            return;
+        }
         chart.data = config.data;
         chart.options = config.options ?? {};
         chart.update();

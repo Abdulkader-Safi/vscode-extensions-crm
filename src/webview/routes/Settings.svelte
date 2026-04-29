@@ -34,9 +34,13 @@
     let saving = $state(false);
 
     onMount(async () => {
-        if (!profile.profile) await profile.load();
+        if (!profile.profile) {
+            await profile.load();
+        }
         const p = profile.profile;
-        if (!p) return;
+        if (!p) {
+            return;
+        }
         form = {
             display_name: p.display_name ?? "",
             company_name: p.company_name ?? "",
@@ -48,7 +52,9 @@
     });
 
     async function save() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         saving = true;
         try {
             await profile.update({

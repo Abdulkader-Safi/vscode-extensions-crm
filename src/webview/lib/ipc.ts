@@ -15,25 +15,38 @@ const listeners = new Map<HostEvent["type"], Set<(p: unknown) => void>>();
 
 let installed = false;
 function install() {
-  if (installed) return;
+  if (installed) {
+    return;
+  }
   installed = true;
   window.addEventListener("message", (ev) => {
     const data = ev.data as
       | ResponseEnvelope<string, unknown>
       | HostEvent
       | undefined;
-    if (!data) return;
+    if (!data) {
+      return;
+    }
     if (data.direction === "response") {
       const p = pending.get(data.id);
-      if (!p) return;
+      if (!p) {
+        return;
+      }
       pending.delete(data.id);
-      if (data.ok) p.resolve(data.payload);
-      else p.reject(new Error(data.error));
+      if (data.ok) {
+        p.resolve(data.payload);
+      } else {
+        p.reject(new Error(data.error));
+      }
       return;
     }
     if (data.direction === "event") {
       const set = listeners.get(data.type);
-      if (set) for (const fn of set) fn(data.payload);
+      if (set) {
+        for (const fn of set) {
+          fn(data.payload);
+        }
+      }
     }
   });
 }

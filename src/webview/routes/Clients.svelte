@@ -21,6 +21,7 @@
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
     import { getSupabase } from "../lib/supabase";
     import { auth } from "../lib/stores/auth.svelte";
+    import { confirm } from "../lib/confirm.svelte";
 
     type Client = {
         id: string;
@@ -53,7 +54,9 @@
 
     const filtered = $derived(
         clients.filter((c) => {
-            if (!search) return true;
+            if (!search) {
+                return true;
+            }
             const q = search.toLowerCase();
             return (
                 c.name.toLowerCase().includes(q) ||
@@ -64,7 +67,9 @@
     );
 
     async function load() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const { data } = await getSupabase()
             .from("clients")
             .select("*")
@@ -126,7 +131,17 @@
     }
 
     async function remove(id: string) {
-        if (!confirm("Delete this client?")) return;
+        if (
+            !(await confirm({
+                title: "Delete client?",
+                message:
+                    "This will permanently remove the client and any communication logs.",
+                confirmLabel: "Delete",
+                destructive: true,
+            }))
+        ) {
+            return;
+        }
         const { error } = await getSupabase()
             .from("clients")
             .delete()

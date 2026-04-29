@@ -54,8 +54,9 @@ export class CrmUriHandler implements vscode.UriHandler {
   }
 }
 
-export function getRedirectUri(): string {
-  // Must match the publisher.name in package.json.
-  // Users add this exact URI to Supabase Authentication -> URL Configuration -> Redirect URLs.
-  return "vscode://vs-crm.vs-crm/auth-callback";
+// Build the redirect URI from the extension's runtime ID so it always matches
+// what's published. `extensionId` is `${publisher}.${name}` from package.json.
+// Users add this exact URI to Supabase Authentication -> URL Configuration -> Redirect URLs.
+export function buildRedirectUri(extensionId: string): string {
+  return `vscode://${extensionId}/auth-callback`;
 }

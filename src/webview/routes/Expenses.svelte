@@ -13,6 +13,7 @@
     import StatCard from "../lib/components/StatCard.svelte";
     import { getSupabase } from "../lib/supabase";
     import { auth } from "../lib/stores/auth.svelte";
+    import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
 
@@ -62,10 +63,19 @@
         }
         return Object.entries(m).sort((a, b) => b[0].localeCompare(a[0]));
     });
-    const thisMonth = $derived(monthlyMap[0]?.[1] ?? 0);
+    // Use the actual current month — `monthlyMap[0]` would mislabel the most
+    // recent past month as "this month" when nothing has been logged yet.
+    const thisMonth = $derived.by(() => {
+        const ym = new Date().toISOString().slice(0, 7);
+        return expenses
+            .filter((e) => e.expense_date.slice(0, 7) === ym)
+            .reduce((s, e) => s + Number(e.amount), 0);
+    });
 
     async function load() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const supa = getSupabase();
         const [e, p] = await Promise.all([
             supa
@@ -81,7 +91,9 @@
     }
 
     async function create() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const { error } = await getSupabase()
             .from("expenses")
             .insert({
@@ -105,7 +117,15 @@
     }
 
     async function remove(id: string) {
-        if (!confirm("Delete?")) return;
+        if (
+            !(await confirm({
+                title: "Delete expense?",
+                confirmLabel: "Delete",
+                destructive: true,
+            }))
+        ) {
+            return;
+        }
         await getSupabase().from("expenses").delete().eq("id", id);
         load();
     }

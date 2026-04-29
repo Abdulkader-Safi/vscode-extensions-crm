@@ -38,8 +38,9 @@ async function rpcExecSql(cfg: SupabaseConfig, stmt: string): Promise<void> {
 async function listAppliedMigrations(
   cfg: SupabaseConfig,
 ): Promise<Set<string>> {
-  // The tracking table may not exist on the first run — gracefully treat 404 as empty.
-  const res = await fetch(`${cfg.url}/rest/v1/_vsccrm_migrations?select=name`, {
+  // The tracking table is created at the top of 0001_schema.sql. On the very
+  // first run it doesn't exist yet — PostgREST returns 404, treat as empty.
+  const res = await fetch(`${cfg.url}/rest/v1/_vscrm_migrations?select=name`, {
     headers: {
       apikey: cfg.serviceRoleKey,
       Authorization: `Bearer ${cfg.serviceRoleKey}`,
@@ -96,9 +97,7 @@ export async function runMigrations(
   const applied: string[] = [];
   const skipped: string[] = [];
 
-  // The tracking table itself is created by 0003 — for runs before that,
-  // the listAppliedMigrations() will 404 and we apply everything.
-  let alreadyApplied = await listAppliedMigrations(cfg);
+  const alreadyApplied = await listAppliedMigrations(cfg);
 
   for (let idx = 0; idx < MIGRATIONS.length; idx++) {
     const mig: Migration = MIGRATIONS[idx];
@@ -125,28 +124,15 @@ export async function runMigrations(
       for (const s of stmts) {
         await rpcExecSql(cfg, s);
       }
-      // Record the migration as applied (only if the tracking table exists).
-      // 0003 creates that table — once it exists, mark all future migrations.
-      if (mig.name === "0003_vsccrm_tracking.sql" || alreadyApplied.size > 0) {
-        await rpcExecSql(
-          cfg,
-          `INSERT INTO public._vsccrm_migrations(name) VALUES (${pgQuote(
-            mig.name,
-          )}) ON CONFLICT (name) DO NOTHING`,
-        );
-        alreadyApplied = new Set([...alreadyApplied, mig.name]);
-      }
-      // Also record the tracking migration itself once the table exists.
-      if (mig.name === "0003_vsccrm_tracking.sql") {
-        for (const earlier of MIGRATIONS.slice(0, idx)) {
-          await rpcExecSql(
-            cfg,
-            `INSERT INTO public._vsccrm_migrations(name) VALUES (${pgQuote(
-              earlier.name,
-            )}) ON CONFLICT (name) DO NOTHING`,
-          );
-        }
-      }
+      // The tracking table is created in 0001 itself, so by the time the
+      // first migration's statements have all run we can record it. Every
+      // subsequent migration records itself the same way.
+      await rpcExecSql(
+        cfg,
+        `INSERT INTO public._vscrm_migrations(name) VALUES (${pgQuote(
+          mig.name,
+        )}) ON CONFLICT (name) DO NOTHING`,
+      );
       applied.push(mig.name);
       onProgress({
         current: idx + 1,
@@ -167,7 +153,7 @@ export async function runMigrations(
     }
   }
 
-  // Tear down the helper function — service role key will also be cleared by caller.
+  // Tear down the helper function — service role key is cleared by caller.
   try {
     await rpcExecSql(cfg, TEARDOWN_FUNCTION_SQL);
   } catch {

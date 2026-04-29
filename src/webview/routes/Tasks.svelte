@@ -14,6 +14,7 @@
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
     import { getSupabase } from "../lib/supabase";
     import { auth } from "../lib/stores/auth.svelte";
+    import { confirm } from "../lib/confirm.svelte";
     import { formatMinutes } from "../lib/utils";
 
     type Task = {
@@ -63,11 +64,15 @@
         timer = setInterval(() => (now = Date.now()), 1000);
     });
     onDestroy(() => {
-        if (timer) clearInterval(timer);
+        if (timer) {
+            clearInterval(timer);
+        }
     });
 
     async function load() {
-        if (!auth.user) return;
+        if (!auth.user) {
+            return;
+        }
         const supa = getSupabase();
         const [t, p] = await Promise.all([
             supa
@@ -122,7 +127,15 @@
     }
 
     async function remove(id: string) {
-        if (!confirm("Delete?")) return;
+        if (
+            !(await confirm({
+                title: "Delete task?",
+                confirmLabel: "Delete",
+                destructive: true,
+            }))
+        ) {
+            return;
+        }
         await getSupabase().from("tasks").delete().eq("id", id);
         load();
     }
@@ -132,7 +145,9 @@
     }
 
     async function stopTimer() {
-        if (!running || !auth.user) return;
+        if (!running || !auth.user) {
+            return;
+        }
         const minutes = Math.max(
             1,
             Math.round((Date.now() - running.startedAt) / 60000),
