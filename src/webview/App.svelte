@@ -1,45 +1,91 @@
 <script lang="ts">
-    import Router, { link, router } from "svelte-spa-router";
-    import NotificationPage from "./pages/NotificationPage.svelte";
-    import DirectoryListPage from "./pages/DirectoryListPage.svelte";
+    import { onMount } from "svelte";
+    import Router from "svelte-spa-router";
+    import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
+
+    import { config } from "./lib/stores/config.svelte";
+    import { auth } from "./lib/stores/auth.svelte";
+    import { profile } from "./lib/stores/profile.svelte";
+
+    import AppLayout from "./lib/components/AppLayout.svelte";
+    import Toaster from "./lib/components/ui/Toaster.svelte";
+    import Spinner from "./lib/components/ui/Spinner.svelte";
+
+    import Onboarding from "./onboarding/Onboarding.svelte";
+    import AuthScreen from "./auth/AuthScreen.svelte";
+
+    import Dashboard from "./routes/Dashboard.svelte";
+    import Clients from "./routes/Clients.svelte";
+    import Leads from "./routes/Leads.svelte";
+    import Projects from "./routes/Projects.svelte";
+    import Tasks from "./routes/Tasks.svelte";
+    import Invoices from "./routes/Invoices.svelte";
+    import Expenses from "./routes/Expenses.svelte";
+    import Reports from "./routes/Reports.svelte";
+    import Settings from "./routes/Settings.svelte";
+    import NotFound from "./routes/NotFound.svelte";
+
+    const queryClient = new QueryClient({
+        defaultOptions: {
+            queries: { staleTime: 30_000, refetchOnWindowFocus: false },
+        },
+    });
 
     const routes = {
-        "/": NotificationPage,
-        "/directory": DirectoryListPage,
+        "/": Dashboard,
+        "/clients": Clients,
+        "/leads": Leads,
+        "/projects": Projects,
+        "/tasks": Tasks,
+        "/invoices": Invoices,
+        "/expenses": Expenses,
+        "/reports": Reports,
+        "/settings": Settings,
+        "*": NotFound,
     };
 
-    const navItems = [
-        { path: "/", label: "Notifications" },
-        { path: "/directory", label: "Directory" },
-    ];
+    onMount(async () => {
+        await config.load();
+        if (config.isReadyForApp) {
+            await auth.init();
+            if (auth.user) await profile.load();
+        }
+    });
+
+    // Re-init auth + profile whenever bootstrap completes / user signs in
+    $effect(() => {
+        if (config.isReadyForApp && auth.loading === false && auth.user) {
+            profile.load();
+        }
+    });
+
+    async function onOnboardingDone() {
+        await config.refresh();
+        await auth.init();
+    }
 </script>
 
-<div class="flex h-full text-vscode-fg bg-vscode-bg">
-    <aside
-        class="flex flex-col w-56 border-r bg-vscode-sidebar-bg text-vscode-sidebar-fg border-vscode-sidebar-border"
-    >
+<QueryClientProvider client={queryClient}>
+    {#if !config.loaded}
         <div
-            class="px-4 py-2 text-xs font-semibold tracking-wide uppercase bg-vscode-section-bg text-vscode-section-fg"
+            class="flex h-full items-center justify-center text-vscode-description"
         >
-            Svelte Starter
+            <Spinner size={20} />
         </div>
-        <nav class="flex flex-col flex-1 py-1 overflow-y-auto">
-            {#each navItems as item (item.path)}
-                <a
-                    use:link
-                    href={item.path}
-                    class="px-4 py-1.5 text-sm hover:bg-vscode-list-hover {router.location ===
-                    item.path
-                        ? 'bg-vscode-list-active-bg text-vscode-list-active-fg'
-                        : ''}"
-                >
-                    {item.label}
-                </a>
-            {/each}
-        </nav>
-    </aside>
-
-    <main class="flex-1 overflow-y-auto">
-        <Router {routes} />
-    </main>
-</div>
+    {:else if !config.bootstrapped}
+        <Onboarding onDone={onOnboardingDone} />
+    {:else if auth.loading}
+        <div
+            class="flex h-full items-center justify-center text-vscode-description"
+        >
+            <Spinner size={20} />
+        </div>
+    {:else if !auth.user}
+        <AuthScreen />
+    {:else}
+        <AppLayout>
+            <Router {routes} />
+        </AppLayout>
+    {/if}
+    <Toaster />
+</QueryClientProvider>

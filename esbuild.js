@@ -20,7 +20,7 @@ const esbuildProblemMatcherPlugin = {
       result.errors.forEach(({ text, location }) => {
         console.error(`✘ [ERROR] ${text}`);
         console.error(
-          `    ${location.file}:${location.line}:${location.column}:`
+          `    ${location.file}:${location.line}:${location.column}:`,
         );
       });
       console.log("[watch] build finished");
@@ -84,6 +84,7 @@ async function main() {
     outfile: "dist/extension.js",
     external: ["vscode"],
     logLevel: "silent",
+    loader: { ".sql": "text" },
     plugins: [esbuildProblemMatcherPlugin],
   });
 
@@ -97,7 +98,14 @@ async function main() {
     platform: "browser",
     outfile: "dist/webview.js",
     mainFields: ["svelte", "browser", "module", "main"],
-    conditions: ["svelte", "browser", production ? "production" : "development"],
+    conditions: [
+      "svelte",
+      "browser",
+      production ? "production" : "development",
+    ],
+    define: {
+      "process.env.NODE_ENV": production ? '"production"' : '"development"',
+    },
     logLevel: "silent",
     plugins: [
       esbuildSvelte({

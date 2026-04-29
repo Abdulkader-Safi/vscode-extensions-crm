@@ -1,7 +1,8 @@
 {
-  "name": "svelte-starter",
-  "displayName": "svelte-starter",
-  "description": "A VS Code extension starter with Svelte and TailwindCSS",
+  "name": "vs-crm",
+  "displayName": "vs-crm",
+  "publisher": "vs-crm",
+  "description": "A complete CRM (clients, projects, tasks, invoices, expenses, reports) running inside VS Code on top of your own Supabase project.",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.106.1"
@@ -9,17 +10,22 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:vs-crm.open",
+    "onCommand:vs-crm.resetOnboarding"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "svelte-starter.helloWorld",
-        "title": "Hello World"
+        "command": "vs-crm.open",
+        "title": "Open",
+        "category": "vs-crm"
       },
       {
-        "command": "svelte-starter.openSvelteView",
-        "title": "Open Svelte View"
+        "command": "vs-crm.resetOnboarding",
+        "title": "Reset Onboarding (clears stored credentials)",
+        "category": "vs-crm"
       }
     ]
   },
@@ -64,6 +70,18 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "svelte-spa-router": "^5.0.1"
+    "@supabase/supabase-js": "^2.45.0",
+    "@tanstack/svelte-query": "^5.59.0",
+    "bits-ui": "^1.0.0",
+    "chart.js": "^4.4.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^3.6.0",
+    "jspdf": "^2.5.1",
+    "lucide-svelte": "^0.460.0",
+    "svelte-dnd-action": "^0.9.50",
+    "svelte-sonner": "^0.3.28",
+    "svelte-spa-router": "^5.0.1",
+    "tailwind-merge": "^2.5.0",
+    "zod": "^3.23.8"
   }
 }
