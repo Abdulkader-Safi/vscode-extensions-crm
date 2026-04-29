@@ -1,7 +1,7 @@
 import { getSupabase } from "../supabase";
 import { auth } from "./auth.svelte";
 
-export type Profile = {
+type Profile = {
   id: string;
   display_name: string | null;
   company_name: string | null;

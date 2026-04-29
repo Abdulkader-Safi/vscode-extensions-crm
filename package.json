@@ -83,7 +83,6 @@
     "@vscode/test-electron": "^2.5.2",
     "autoprefixer": "^10.5.0",
     "esbuild": "^0.28.0",
-    "esbuild-plugin-inline-import": "^1.1.0",
     "esbuild-svelte": "^0.9.4",
     "eslint": "^10.2.1",
     "eslint-plugin-svelte": "^3.17.0",
@@ -101,7 +100,6 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "@tanstack/svelte-query": "^5.59.0",
-    "bits-ui": "^1.0.0",
     "chart.js": "^4.4.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
@@ -110,7 +108,6 @@
     "svelte-dnd-action": "^0.9.50",
     "svelte-sonner": "^0.3.28",
     "svelte-spa-router": "^5.0.1",
-    "tailwind-merge": "^2.5.0",
-    "zod": "^3.23.8"
+    "tailwind-merge": "^2.5.0"
   }
 }

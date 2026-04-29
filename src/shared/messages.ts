@@ -2,7 +2,7 @@
 // All messages share an envelope with `id` (for request/response correlation)
 // and `type` (discriminator).
 
-export type RequestEnvelope<T extends string, P> = {
+type RequestEnvelope<T extends string, P> = {
   id: string;
   direction: "request";
   type: T;
@@ -25,7 +25,7 @@ export type ResponseEnvelope<T extends string, R> =
       error: string;
     };
 
-export type EventEnvelope<T extends string, P> = {
+type EventEnvelope<T extends string, P> = {
   id?: undefined;
   direction: "event";
   type: T;
@@ -40,7 +40,7 @@ export type BootConfig = {
   redirectUri: string;
 };
 
-export type SaveCredsPayload = {
+type SaveCredsPayload = {
   url: string;
   serviceRoleKey: string;
   anonKey: string;
@@ -73,12 +73,12 @@ export type AuthTokens =
     };
 
 // ---- Generic secret storage (proxied for the Supabase storage adapter) ----
-export type SecretGetPayload = { key: string };
-export type SecretSetPayload = { key: string; value: string };
-export type SecretDeletePayload = { key: string };
+type SecretGetPayload = { key: string };
+type SecretSetPayload = { key: string; value: string };
+type SecretDeletePayload = { key: string };
 
 // ---- Notify ----
-export type NotifyPayload = {
+type NotifyPayload = {
   level: "info" | "warning" | "error";
   message: string;
 };
@@ -107,7 +107,7 @@ export type HostEvent =
   | EventEnvelope<"boot/migration-progress", MigrationProgress>
   | EventEnvelope<"auth/tokens", AuthTokens>;
 
-export type AnyMessage =
+type AnyMessage =
   | WebviewRequest
   | ResponseEnvelope<string, unknown>
   | HostEvent;

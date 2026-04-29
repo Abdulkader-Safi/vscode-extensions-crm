@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 
 const NS = "vs-crm";
 
-export const SecretKeys = {
+const SecretKeys = {
   url: `${NS}.supabaseUrl`,
   anonKey: `${NS}.anonKey`,
   serviceRoleKey: `${NS}.serviceRoleKey`,

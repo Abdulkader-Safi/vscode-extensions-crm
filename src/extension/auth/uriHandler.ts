@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { AuthTokens } from "../../shared/messages";
 
-export type AuthCallbackListener = (tokens: AuthTokens) => void;
+type AuthCallbackListener = (tokens: AuthTokens) => void;
 
 export class CrmUriHandler implements vscode.UriHandler {
   private listeners: Set<AuthCallbackListener> = new Set();
@@ -10,7 +10,9 @@ export class CrmUriHandler implements vscode.UriHandler {
     // Path is /auth-callback. Tokens may arrive as either:
     //  - query params:    ?code=... (PKCE flow)
     //  - fragment params: #access_token=...&refresh_token=... (implicit flow)
-    if (!uri.path.includes("auth-callback")) return;
+    if (!uri.path.includes("auth-callback")) {
+      return;
+    }
 
     const query = new URLSearchParams(uri.query);
     const fragment = new URLSearchParams(uri.fragment.replace(/^#/, ""));

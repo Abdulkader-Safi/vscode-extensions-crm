@@ -1,0 +1,40 @@
+{
+  "$schema": "https://docs.fallow.tools/schema/fallow-config.json",
+  "entry": [
+    "src/extension.ts",
+    "src/webview/index.ts",
+    "src/webview/index.css",
+    "esbuild.js",
+    ".vscode-test.mjs"
+  ],
+  "ignorePatterns": [
+    "dist/**",
+    "out/**",
+    "old/**",
+    "node_modules/**",
+    "migrations/**",
+    "*.config.*",
+    "src/test/**"
+  ],
+  "ignoreDependencies": [
+    "vscode",
+    "@vscode/test-electron"
+  ],
+  "dynamicallyLoaded": [
+    "migrations/**/*.sql",
+    "src/webview/**/*.svelte"
+  ],
+  "usedClassMembers": [
+    "handleUri",
+    "resolveWebviewView"
+  ],
+  "duplicates": {
+    "minLines": 8,
+    "ignoreImports": true
+  },
+  "rules": {
+    "unused-files": "warn",
+    "unused-exports": "warn",
+    "unused-types": "warn"
+  }
+}

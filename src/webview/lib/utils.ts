@@ -20,20 +20,6 @@ export function formatCurrency(
   }
 }
 
-export function formatDate(d: string | Date | null | undefined): string {
-  if (!d) return "";
-  const date = typeof d === "string" ? new Date(d) : d;
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString();
-}
-
-export function formatDateTime(d: string | Date | null | undefined): string {
-  if (!d) return "";
-  const date = typeof d === "string" ? new Date(d) : d;
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString();
-}
-
 export function formatMinutes(mins: number | null | undefined): string {
   const m = mins ?? 0;
   const h = Math.floor(m / 60);
