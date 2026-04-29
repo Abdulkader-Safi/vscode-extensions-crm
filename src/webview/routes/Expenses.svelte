@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
     import { Plus, Trash2 } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
@@ -11,23 +10,15 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
     import StatCard from "../lib/components/StatCard.svelte";
-    import { getSupabase } from "../lib/supabase";
-    import { auth } from "../lib/stores/auth.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
-
-    type Expense = {
-        id: string;
-        category: string;
-        amount: number;
-        vendor: string | null;
-        description: string | null;
-        expense_date: string;
-        currency: string;
-        project_id: string | null;
-    };
-    type Project = { id: string; name: string };
+    import {
+        useExpensesQuery,
+        useCreateExpenseMutation,
+        useDeleteExpenseMutation,
+    } from "../lib/queries/expenses";
+    import { useProjectsQuery } from "../lib/queries/projects";
 
     const CATEGORIES = [
         "software",
@@ -41,9 +32,11 @@
         "other",
     ];
 
-    let expenses = $state<Expense[]>([]);
-    let projects = $state<Project[]>([]);
-    let loaded = $state(false);
+    const expensesQuery = useExpensesQuery();
+    const projectsQuery = useProjectsQuery();
+    const createMutation = useCreateExpenseMutation();
+    const deleteMutation = useDeleteExpenseMutation();
+
     let open = $state(false);
     let form = $state({
         category: "software",
@@ -54,15 +47,10 @@
         project_id: "none",
     });
 
+    const expenses = $derived($expensesQuery.data ?? []);
+    const projects = $derived($projectsQuery.data ?? []);
+
     const total = $derived(expenses.reduce((s, e) => s + Number(e.amount), 0));
-    const monthlyMap = $derived.by(() => {
-        const m: Record<string, number> = {};
-        for (const e of expenses) {
-            const k = e.expense_date.slice(0, 7);
-            m[k] = (m[k] ?? 0) + Number(e.amount);
-        }
-        return Object.entries(m).sort((a, b) => b[0].localeCompare(a[0]));
-    });
     // Use the actual current month — `monthlyMap[0]` would mislabel the most
     // recent past month as "this month" when nothing has been logged yet.
     const thisMonth = $derived.by(() => {
@@ -72,32 +60,9 @@
             .reduce((s, e) => s + Number(e.amount), 0);
     });
 
-    async function load() {
-        if (!auth.user) {
-            return;
-        }
-        const supa = getSupabase();
-        const [e, p] = await Promise.all([
-            supa
-                .from("expenses")
-                .select("*")
-                .eq("user_id", auth.user.id)
-                .order("expense_date", { ascending: false }),
-            supa.from("projects").select("id,name").eq("user_id", auth.user.id),
-        ]);
-        expenses = (e.data as Expense[]) ?? [];
-        projects = (p.data as Project[]) ?? [];
-        loaded = true;
-    }
-
     async function create() {
-        if (!auth.user) {
-            return;
-        }
-        const { error } = await getSupabase()
-            .from("expenses")
-            .insert({
-                user_id: auth.user.id,
+        try {
+            await $createMutation.mutateAsync({
                 category: form.category,
                 amount: Number(form.amount),
                 currency: profile.currency,
@@ -106,14 +71,12 @@
                 expense_date: form.expense_date,
                 project_id: form.project_id === "none" ? null : form.project_id,
             });
-        if (error) {
-            toast.error(error.message);
-            return;
+            toast.success("Expense logged");
+            open = false;
+            form = { ...form, amount: "0", vendor: "", description: "" };
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        toast.success("Expense logged");
-        open = false;
-        form = { ...form, amount: "0", vendor: "", description: "" };
-        load();
     }
 
     async function remove(id: string) {
@@ -126,11 +89,12 @@
         ) {
             return;
         }
-        await getSupabase().from("expenses").delete().eq("id", id);
-        load();
+        try {
+            await $deleteMutation.mutateAsync(id);
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
-
-    onMount(load);
 </script>
 
 <div class="p-6">
@@ -155,7 +119,7 @@
         <StatCard label="Entries" value={String(expenses.length)} />
     </div>
 
-    {#if !loaded}
+    {#if $expensesQuery.isLoading}
         <div class="text-xs text-vscode-description">Loading…</div>
     {:else if expenses.length === 0}
         <Card>

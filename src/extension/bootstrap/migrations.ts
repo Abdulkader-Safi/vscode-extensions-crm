@@ -5,6 +5,7 @@
 import schemaSql from "../../../migrations/0001_schema.sql";
 import revokeSql from "../../../migrations/0002_revoke.sql";
 import invoiceUniqueSql from "../../../migrations/0004_invoice_unique.sql";
+import storageSql from "../../../migrations/0005_storage.sql";
 
 export type Migration = { name: string; sql: string };
 
@@ -12,6 +13,5 @@ export const MIGRATIONS: Migration[] = [
   { name: "0001_schema.sql", sql: schemaSql },
   { name: "0002_revoke.sql", sql: revokeSql },
   { name: "0004_invoice_unique.sql", sql: invoiceUniqueSql },
+  { name: "0005_storage.sql", sql: storageSql },
 ];
-
-export const TEARDOWN_FUNCTION_SQL = `DROP FUNCTION IF EXISTS public._vscrm_exec_sql(text);`;

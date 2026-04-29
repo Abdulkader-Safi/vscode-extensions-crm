@@ -131,7 +131,11 @@ export class CrmWebviewProvider {
         if (!url || !serviceRoleKey) {
           throw new Error("Connection not saved.");
         }
-        const result = await runMigrations(
+        // Service-role key intentionally stays in SecretStorage so the host
+        // can apply future schema bundles automatically on extension activate
+        // (see applyPendingMigrations in extension.ts). Tradeoff documented
+        // in the README: zero-friction upgrades vs. persistent elevated key.
+        return runMigrations(
           { url, serviceRoleKey },
           (p: MigrationProgress) => {
             this._sendEvent({
@@ -141,12 +145,6 @@ export class CrmWebviewProvider {
             });
           },
         );
-        // Migrations applied — service-role key is no longer needed.
-        // Drop it now so closing the webview before "Continue to sign-in"
-        // doesn't leak the key. On failure (caught above) we leave it so
-        // the user can retry without re-pasting.
-        await this._secrets.clearServiceRoleKey();
-        return result;
       }
       case "boot/finalize": {
         await this._secrets.setBootstrapped(true);

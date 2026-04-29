@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { CrmWebviewProvider } from "./WebviewProvider";
 import { CrmSecrets } from "./extension/secrets";
 import { CrmUriHandler, buildRedirectUri } from "./extension/auth/uriHandler";
+import { applyPendingMigrations } from "./extension/bootstrap/autoApply";
 
 export function activate(context: vscode.ExtensionContext) {
   const secrets = new CrmSecrets(context);
@@ -23,7 +24,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("vs-crm.resetOnboarding", async () => {
       const yes = await vscode.window.showWarningMessage(
-        "Reset vs-crm? This clears your stored Supabase URL, anon key, service-role key (if still kept), and any saved session. Data in your Supabase project is NOT touched.",
+        "Reset vs-crm? This clears your stored Supabase URL, anon key, service-role key, and any saved session. Data in your Supabase project is NOT touched.",
         { modal: true },
         "Reset",
       );
@@ -34,6 +35,11 @@ export function activate(context: vscode.ExtensionContext) {
       );
     }),
   );
+
+  // Fire-and-forget: apply any migration bundles shipped with this version
+  // that the user's Supabase project hasn't recorded yet. No-ops if there's
+  // nothing to do (or no service-role key stored).
+  applyPendingMigrations(secrets);
 }
 
 export function deactivate() {}

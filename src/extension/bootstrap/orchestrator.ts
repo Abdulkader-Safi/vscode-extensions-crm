@@ -1,9 +1,5 @@
 import { splitSqlStatements } from "./sqlSplitter";
-import {
-  MIGRATIONS,
-  TEARDOWN_FUNCTION_SQL,
-  type Migration,
-} from "./migrations";
+import { MIGRATIONS, type Migration } from "./migrations";
 import type {
   MigrationProgress,
   RunMigrationsResult,
@@ -133,13 +129,11 @@ export async function runMigrations(
     }
   }
 
-  // Tear down the helper function — service role key is cleared by caller.
-  try {
-    await rpcExecSql(cfg, TEARDOWN_FUNCTION_SQL);
-  } catch {
-    // non-fatal
-  }
-
+  // The helper function `_vscrm_exec_sql` stays installed so future migration
+  // bundles (shipped in extension upgrades) can be applied automatically on
+  // the next activation without re-onboarding. It is locked to service_role
+  // (REVOKE ... FROM anon, authenticated, public) so it expands no surface
+  // beyond holding the service-role key itself.
   return { applied, skipped };
 }
 

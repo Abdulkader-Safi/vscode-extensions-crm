@@ -6,6 +6,7 @@
     import { config } from "./lib/stores/config.svelte";
     import { auth } from "./lib/stores/auth.svelte";
     import { profile } from "./lib/stores/profile.svelte";
+    import { startRealtime } from "./lib/queries/realtime";
 
     import AppLayout from "./lib/components/AppLayout.svelte";
     import Toaster from "./lib/components/ui/Toaster.svelte";
@@ -17,8 +18,10 @@
 
     import Dashboard from "./routes/Dashboard.svelte";
     import Clients from "./routes/Clients.svelte";
+    import ClientDetail from "./routes/ClientDetail.svelte";
     import Leads from "./routes/Leads.svelte";
     import Projects from "./routes/Projects.svelte";
+    import ProjectDetail from "./routes/ProjectDetail.svelte";
     import Tasks from "./routes/Tasks.svelte";
     import Invoices from "./routes/Invoices.svelte";
     import Expenses from "./routes/Expenses.svelte";
@@ -35,8 +38,10 @@
     const routes = {
         "/": Dashboard,
         "/clients": Clients,
+        "/clients/:id": ClientDetail,
         "/leads": Leads,
         "/projects": Projects,
+        "/projects/:id": ProjectDetail,
         "/tasks": Tasks,
         "/invoices": Invoices,
         "/expenses": Expenses,
@@ -59,6 +64,14 @@
     $effect(() => {
         if (config.isReadyForApp && auth.loading === false && auth.user) {
             profile.load();
+        }
+    });
+
+    // Multi-tab sync: subscribe to postgres_changes once we're authenticated.
+    // Returns a cleanup that runs on sign-out or when the effect re-fires.
+    $effect(() => {
+        if (config.isReadyForApp && auth.user) {
+            return startRealtime(queryClient);
         }
     });
 

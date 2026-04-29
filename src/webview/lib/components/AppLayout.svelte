@@ -16,6 +16,7 @@
     import { auth } from "../stores/auth.svelte";
     import { profile } from "../stores/profile.svelte";
     import { cn } from "../utils";
+    import NotificationsBell from "./NotificationsBell.svelte";
 
     interface Props {
         children?: Snippet;
@@ -42,11 +43,23 @@
         <div
             class="flex items-center gap-2 px-4 py-3 border-b border-vscode-sidebar-border"
         >
-            <div
-                class="h-7 w-7 rounded bg-brand text-brand-fg flex items-center justify-center text-xs font-bold"
-            >
-                FF
-            </div>
+            {#if profile.profile?.avatar_url}
+                <img
+                    src={profile.profile.avatar_url}
+                    alt="Avatar"
+                    class="h-7 w-7 rounded object-cover"
+                />
+            {:else}
+                <div
+                    class="h-7 w-7 rounded bg-brand text-brand-fg flex items-center justify-center text-xs font-bold"
+                >
+                    {(profile.profile?.display_name ??
+                        auth.user?.email ??
+                        "?")
+                        .slice(0, 2)
+                        .toUpperCase()}
+                </div>
+            {/if}
             <div>
                 <div class="text-xs font-semibold">vs-crm</div>
                 <div class="text-[10px] text-vscode-description truncate">
@@ -83,7 +96,14 @@
             </button>
         </div>
     </aside>
-    <main class="flex-1 overflow-y-auto">
-        {#if children}{@render children()}{/if}
-    </main>
+    <div class="flex min-w-0 flex-1 flex-col">
+        <header
+            class="flex h-10 shrink-0 items-center justify-end border-b border-vscode-border bg-vscode-bg px-4 gap-2"
+        >
+            <NotificationsBell />
+        </header>
+        <main class="flex-1 overflow-y-auto">
+            {#if children}{@render children()}{/if}
+        </main>
+    </div>
 </div>

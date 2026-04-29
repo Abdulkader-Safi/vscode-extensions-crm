@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { Download } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
@@ -7,46 +6,14 @@
     import StatCard from "../lib/components/StatCard.svelte";
     import ChartCanvas from "../lib/components/ChartCanvas.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
-    import { getSupabase } from "../lib/supabase";
-    import { auth } from "../lib/stores/auth.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
+    import { useReportsQuery } from "../lib/queries/reports";
 
-    type Invoice = {
-        id: string;
-        status: string;
-        total: number;
-        paid_at: string | null;
-        issue_date: string;
-        client_id: string | null;
-        invoice_number: string;
-    };
-    type Expense = {
-        id: string;
-        amount: number;
-        expense_date: string;
-        category: string;
-    };
-    type Client = { id: string; name: string };
-
-    let invoices = $state<Invoice[]>([]);
-    let expenses = $state<Expense[]>([]);
-    let clients = $state<Client[]>([]);
-
-    onMount(async () => {
-        if (!auth.user) {
-            return;
-        }
-        const supa = getSupabase();
-        const [i, e, c] = await Promise.all([
-            supa.from("invoices").select("*").eq("user_id", auth.user.id),
-            supa.from("expenses").select("*").eq("user_id", auth.user.id),
-            supa.from("clients").select("id,name").eq("user_id", auth.user.id),
-        ]);
-        invoices = (i.data as Invoice[]) ?? [];
-        expenses = (e.data as Expense[]) ?? [];
-        clients = (c.data as Client[]) ?? [];
-    });
+    const reportsQuery = useReportsQuery();
+    const invoices = $derived($reportsQuery.data?.invoices ?? []);
+    const expenses = $derived($reportsQuery.data?.expenses ?? []);
+    const clients = $derived($reportsQuery.data?.clients ?? []);
 
     const monthly = $derived.by(() => {
         const months = Array.from({ length: 6 }, (_, i) => {

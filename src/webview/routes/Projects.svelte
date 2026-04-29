@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
     import { Plus, Trash2, Pencil, Calendar } from "lucide-svelte";
+    import { push } from "svelte-spa-router";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -12,23 +12,17 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
-    import { getSupabase } from "../lib/supabase";
-    import { auth } from "../lib/stores/auth.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
-
-    type Project = {
-        id: string;
-        name: string;
-        description: string | null;
-        status: string;
-        client_id: string | null;
-        start_date: string | null;
-        end_date: string | null;
-        budget: number;
-    };
-    type Client = { id: string; name: string };
+    import {
+        useProjectsQuery,
+        useCreateProjectMutation,
+        useUpdateProjectMutation,
+        useDeleteProjectMutation,
+        type Project,
+    } from "../lib/queries/projects";
+    import { useClientsQuery } from "../lib/queries/clients";
 
     const STATUSES = [
         { id: "planning", label: "Planning", tone: "info" as const },
@@ -47,34 +41,18 @@
         budget: "0",
     };
 
-    let projects = $state<Project[]>([]);
-    let clients = $state<Client[]>([]);
-    let loaded = $state(false);
+    const projectsQuery = useProjectsQuery();
+    const clientsQuery = useClientsQuery();
+    const createMutation = useCreateProjectMutation();
+    const updateMutation = useUpdateProjectMutation();
+    const deleteMutation = useDeleteProjectMutation();
+
     let open = $state(false);
     let editing = $state<Project | null>(null);
     let form = $state({ ...blank });
 
-    async function load() {
-        if (!auth.user) {
-            return;
-        }
-        const supa = getSupabase();
-        const [p, c] = await Promise.all([
-            supa
-                .from("projects")
-                .select("*")
-                .eq("user_id", auth.user.id)
-                .order("created_at", { ascending: false }),
-            supa
-                .from("clients")
-                .select("id,name")
-                .eq("user_id", auth.user.id)
-                .order("name"),
-        ]);
-        projects = (p.data as Project[]) ?? [];
-        clients = (c.data as Client[]) ?? [];
-        loaded = true;
-    }
+    const projects = $derived($projectsQuery.data ?? []);
+    const clients = $derived($clientsQuery.data ?? []);
 
     function openNew() {
         editing = null;
@@ -95,13 +73,16 @@
         open = true;
     }
 
+    function navigateToDetail(p: Project) {
+        push(`/projects/${p.id}`);
+    }
+
     async function save() {
-        if (!auth.user || !form.name.trim()) {
+        if (!form.name.trim()) {
             toast.error("Name required");
             return;
         }
         const payload = {
-            user_id: auth.user.id,
             name: form.name.trim().slice(0, 200),
             description: form.description.trim() || null,
             status: form.status,
@@ -110,17 +91,21 @@
             end_date: form.end_date || null,
             budget: Number(form.budget) || 0,
         };
-        const supa = getSupabase();
-        const { error } = editing
-            ? await supa.from("projects").update(payload).eq("id", editing.id)
-            : await supa.from("projects").insert(payload);
-        if (error) {
-            toast.error(error.message);
-            return;
+        try {
+            if (editing) {
+                await $updateMutation.mutateAsync({
+                    id: editing.id,
+                    patch: payload,
+                });
+                toast.success("Updated");
+            } else {
+                await $createMutation.mutateAsync(payload);
+                toast.success("Project created");
+            }
+            open = false;
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        toast.success(editing ? "Updated" : "Project created");
-        open = false;
-        load();
     }
 
     async function remove(id: string) {
@@ -134,8 +119,11 @@
         ) {
             return;
         }
-        await getSupabase().from("projects").delete().eq("id", id);
-        load();
+        try {
+            await $deleteMutation.mutateAsync(id);
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 
     function clientName(id: string | null) {
@@ -144,8 +132,6 @@
     function statusInfo(id: string) {
         return STATUSES.find((s) => s.id === id) ?? STATUSES[0];
     }
-
-    onMount(load);
 </script>
 
 <div class="p-6">
@@ -157,7 +143,7 @@
         {/snippet}
     </PageHeader>
 
-    {#if !loaded}
+    {#if $projectsQuery.isLoading}
         <div class="text-xs text-vscode-description">Loading…</div>
     {:else if projects.length === 0}
         <Card>
@@ -176,7 +162,7 @@
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {#each projects as p (p.id)}
                 {@const s = statusInfo(p.status)}
-                <Card class="group">
+                <Card class="group cursor-pointer" onclick={() => navigateToDetail(p)}>
                     <div class="mb-2 flex items-start justify-between">
                         <div class="min-w-0">
                             <h3 class="truncate text-sm font-semibold">
@@ -191,7 +177,10 @@
                                 size="icon"
                                 variant="ghost"
                                 aria-label="Edit"
-                                onclick={() => openEdit(p)}
+                                onclick={(e: MouseEvent) => {
+                                    e.stopPropagation();
+                                    openEdit(p);
+                                }}
                             >
                                 <Pencil class="h-3.5 w-3.5" />
                             </Button>
@@ -200,7 +189,10 @@
                                 variant="ghost"
                                 class="text-vscode-error"
                                 aria-label="Delete"
-                                onclick={() => remove(p.id)}
+                                onclick={(e: MouseEvent) => {
+                                    e.stopPropagation();
+                                    remove(p.id);
+                                }}
                             >
                                 <Trash2 class="h-3.5 w-3.5" />
                             </Button>

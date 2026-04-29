@@ -7,6 +7,7 @@
         children?: Snippet;
         title?: string;
         description?: string;
+        onclick?: (e: MouseEvent) => void;
     }
 
     let {
@@ -14,14 +15,28 @@
         children,
         title,
         description,
+        onclick,
     }: Props = $props();
+
+    function onKey(e: KeyboardEvent) {
+        if (!onclick) return;
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onclick(e as unknown as MouseEvent);
+        }
+    }
 </script>
 
 <div
     class={cn(
         "rounded-lg border border-vscode-card-border bg-vscode-card-bg text-vscode-card-fg",
+        onclick && "focus:outline-none focus:ring-2 focus:ring-vscode-focus",
         className,
     )}
+    role={onclick ? "button" : undefined}
+    tabindex={onclick ? 0 : undefined}
+    {onclick}
+    onkeydown={onclick ? onKey : undefined}
 >
     {#if title || description}
         <div class="border-b border-vscode-card-border px-4 py-3">

@@ -12,23 +12,17 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
-    import { getSupabase } from "../lib/supabase";
-    import { auth } from "../lib/stores/auth.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { formatMinutes } from "../lib/utils";
-
-    type Task = {
-        id: string;
-        title: string;
-        description: string | null;
-        status: string;
-        priority: string;
-        due_date: string | null;
-        project_id: string | null;
-        time_spent_minutes: number;
-        completed_at: string | null;
-    };
-    type Project = { id: string; name: string };
+    import {
+        useTasksQuery,
+        useCreateTaskMutation,
+        useUpdateTaskMutation,
+        useDeleteTaskMutation,
+        useStopTimerMutation,
+        type Task,
+    } from "../lib/queries/tasks";
+    import { useProjectsQuery } from "../lib/queries/projects";
 
     const PRIORITIES = ["low", "medium", "high", "urgent"];
     const STATUSES = ["todo", "in_progress", "done"];
@@ -50,9 +44,13 @@
         project_id: "none",
     };
 
-    let tasks = $state<Task[]>([]);
-    let projects = $state<Project[]>([]);
-    let loaded = $state(false);
+    const tasksQuery = useTasksQuery();
+    const projectsQuery = useProjectsQuery();
+    const createMutation = useCreateTaskMutation();
+    const updateMutation = useUpdateTaskMutation();
+    const deleteMutation = useDeleteTaskMutation();
+    const stopTimerMutation = useStopTimerMutation();
+
     let open = $state(false);
     let form = $state({ ...blank });
     let running = $state<{ taskId: string; startedAt: number } | null>(null);
@@ -60,7 +58,6 @@
     let timer: ReturnType<typeof setInterval> | null = null;
 
     onMount(() => {
-        load();
         timer = setInterval(() => (now = Date.now()), 1000);
     });
     onDestroy(() => {
@@ -69,61 +66,49 @@
         }
     });
 
-    async function load() {
-        if (!auth.user) {
-            return;
-        }
-        const supa = getSupabase();
-        const [t, p] = await Promise.all([
-            supa
-                .from("tasks")
-                .select("*")
-                .eq("user_id", auth.user.id)
-                .order("created_at", { ascending: false }),
-            supa.from("projects").select("id,name").eq("user_id", auth.user.id),
-        ]);
-        tasks = (t.data as Task[]) ?? [];
-        projects = (p.data as Project[]) ?? [];
-        loaded = true;
-    }
+    const tasks = $derived($tasksQuery.data ?? []);
+    const projects = $derived($projectsQuery.data ?? []);
 
     async function create() {
-        if (!auth.user || !form.title.trim()) {
+        if (!form.title.trim()) {
             toast.error("Title required");
             return;
         }
-        const { error } = await getSupabase()
-            .from("tasks")
-            .insert({
-                user_id: auth.user.id,
+        try {
+            await $createMutation.mutateAsync({
                 title: form.title.trim().slice(0, 200),
                 description: form.description.trim() || null,
                 status: form.status,
                 priority: form.priority,
                 due_date: form.due_date || null,
                 project_id: form.project_id === "none" ? null : form.project_id,
+                time_spent_minutes: 0,
+                completed_at: null,
             });
-        if (error) {
-            toast.error(error.message);
-            return;
+            toast.success("Task created");
+            form = { ...blank };
+            open = false;
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        toast.success("Task created");
-        form = { ...blank };
-        open = false;
-        load();
     }
 
     async function toggleDone(t: Task) {
         const newStatus = t.status === "done" ? "todo" : "done";
-        await getSupabase()
-            .from("tasks")
-            .update({
-                status: newStatus,
-                completed_at:
-                    newStatus === "done" ? new Date().toISOString() : null,
-            })
-            .eq("id", t.id);
-        load();
+        try {
+            await $updateMutation.mutateAsync({
+                id: t.id,
+                patch: {
+                    status: newStatus,
+                    completed_at:
+                        newStatus === "done"
+                            ? new Date().toISOString()
+                            : null,
+                },
+            });
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 
     async function remove(id: string) {
@@ -136,8 +121,11 @@
         ) {
             return;
         }
-        await getSupabase().from("tasks").delete().eq("id", id);
-        load();
+        try {
+            await $deleteMutation.mutateAsync(id);
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 
     function startTimer(t: Task) {
@@ -145,7 +133,7 @@
     }
 
     async function stopTimer() {
-        if (!running || !auth.user) {
+        if (!running) {
             return;
         }
         const minutes = Math.max(
@@ -154,24 +142,20 @@
         );
         const t = tasks.find((x) => x.id === running!.taskId);
         if (t) {
-            const supa = getSupabase();
-            await supa
-                .from("tasks")
-                .update({
-                    time_spent_minutes: t.time_spent_minutes + minutes,
-                })
-                .eq("id", t.id);
-            await supa.from("time_entries").insert({
-                user_id: auth.user.id,
-                task_id: t.id,
-                project_id: t.project_id,
-                started_at: new Date(running.startedAt).toISOString(),
-                ended_at: new Date().toISOString(),
-                duration_minutes: minutes,
-            });
+            try {
+                await $stopTimerMutation.mutateAsync({
+                    taskId: t.id,
+                    projectId: t.project_id,
+                    currentMinutes: t.time_spent_minutes,
+                    addMinutes: minutes,
+                    startedAt: new Date(running.startedAt).toISOString(),
+                    endedAt: new Date().toISOString(),
+                });
+            } catch (e) {
+                toast.error((e as Error).message);
+            }
         }
         running = null;
-        load();
     }
 
     function projectName(id: string | null) {
@@ -192,7 +176,7 @@
         {/snippet}
     </PageHeader>
 
-    {#if !loaded}
+    {#if $tasksQuery.isLoading}
         <div class="text-xs text-vscode-description">Loading…</div>
     {:else if tasks.length === 0}
         <Card>

@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
     import {
         Plus,
@@ -10,6 +9,7 @@
         Trash2,
         Pencil,
     } from "lucide-svelte";
+    import { push } from "svelte-spa-router";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -19,21 +19,14 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
-    import { getSupabase } from "../lib/supabase";
-    import { auth } from "../lib/stores/auth.svelte";
     import { confirm } from "../lib/confirm.svelte";
-
-    type Client = {
-        id: string;
-        name: string;
-        company: string | null;
-        email: string | null;
-        phone: string | null;
-        website: string | null;
-        notes: string | null;
-        tags: string[];
-        status: string;
-    };
+    import {
+        useClientsQuery,
+        useCreateClientMutation,
+        useUpdateClientMutation,
+        useDeleteClientMutation,
+        type Client,
+    } from "../lib/queries/clients";
 
     const blank = {
         name: "",
@@ -45,13 +38,17 @@
         tags: "",
     };
 
-    let clients = $state<Client[]>([]);
-    let loaded = $state(false);
+    const clientsQuery = useClientsQuery();
+    const createMutation = useCreateClientMutation();
+    const updateMutation = useUpdateClientMutation();
+    const deleteMutation = useDeleteClientMutation();
+
     let open = $state(false);
     let editing = $state<Client | null>(null);
     let form = $state({ ...blank });
     let search = $state("");
 
+    const clients = $derived($clientsQuery.data ?? []);
     const filtered = $derived(
         clients.filter((c) => {
             if (!search) {
@@ -65,19 +62,6 @@
             );
         }),
     );
-
-    async function load() {
-        if (!auth.user) {
-            return;
-        }
-        const { data } = await getSupabase()
-            .from("clients")
-            .select("*")
-            .eq("user_id", auth.user.id)
-            .order("created_at", { ascending: false });
-        clients = (data as Client[]) ?? [];
-        loaded = true;
-    }
 
     function openNew() {
         editing = null;
@@ -98,13 +82,16 @@
         open = true;
     }
 
+    function navigateToDetail(c: Client) {
+        push(`/clients/${c.id}`);
+    }
+
     async function save() {
-        if (!auth.user || !form.name.trim()) {
+        if (!form.name.trim()) {
             toast.error("Name is required");
             return;
         }
         const payload = {
-            user_id: auth.user.id,
             name: form.name.trim().slice(0, 200),
             company: form.company.trim().slice(0, 200) || null,
             email: form.email.trim().slice(0, 255) || null,
@@ -116,18 +103,23 @@
                 .map((t) => t.trim())
                 .filter(Boolean)
                 .slice(0, 20),
+            status: editing?.status ?? "active",
         };
-        const supa = getSupabase();
-        const { error } = editing
-            ? await supa.from("clients").update(payload).eq("id", editing.id)
-            : await supa.from("clients").insert(payload);
-        if (error) {
-            toast.error(error.message);
-            return;
+        try {
+            if (editing) {
+                await $updateMutation.mutateAsync({
+                    id: editing.id,
+                    patch: payload,
+                });
+                toast.success("Client updated");
+            } else {
+                await $createMutation.mutateAsync(payload);
+                toast.success("Client added");
+            }
+            open = false;
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        toast.success(editing ? "Client updated" : "Client added");
-        open = false;
-        load();
     }
 
     async function remove(id: string) {
@@ -142,19 +134,13 @@
         ) {
             return;
         }
-        const { error } = await getSupabase()
-            .from("clients")
-            .delete()
-            .eq("id", id);
-        if (error) {
-            toast.error(error.message);
-            return;
+        try {
+            await $deleteMutation.mutateAsync(id);
+            toast.success("Client deleted");
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        toast.success("Client deleted");
-        load();
     }
-
-    onMount(load);
 </script>
 
 <div class="p-6">
@@ -177,7 +163,7 @@
         />
     </div>
 
-    {#if !loaded}
+    {#if $clientsQuery.isLoading}
         <div class="text-xs text-vscode-description">Loading…</div>
     {:else if filtered.length === 0}
         <Card>
@@ -199,7 +185,7 @@
     {:else}
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {#each filtered as c (c.id)}
-                <Card class="group">
+                <Card class="group cursor-pointer" onclick={() => navigateToDetail(c)}>
                     <div class="mb-2 flex items-start justify-between">
                         <div class="min-w-0">
                             <h3 class="truncate text-sm font-semibold">
@@ -221,7 +207,10 @@
                                 size="icon"
                                 variant="ghost"
                                 aria-label="Edit"
-                                onclick={() => openEdit(c)}
+                                onclick={(e: MouseEvent) => {
+                                    e.stopPropagation();
+                                    openEdit(c);
+                                }}
                             >
                                 <Pencil class="h-3.5 w-3.5" />
                             </Button>
@@ -230,7 +219,10 @@
                                 variant="ghost"
                                 class="text-vscode-error"
                                 aria-label="Delete"
-                                onclick={() => remove(c.id)}
+                                onclick={(e: MouseEvent) => {
+                                    e.stopPropagation();
+                                    remove(c.id);
+                                }}
                             >
                                 <Trash2 class="h-3.5 w-3.5" />
                             </Button>

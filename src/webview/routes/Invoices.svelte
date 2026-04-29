@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
     import { Plus, Trash2, Pencil, FileDown, Check } from "lucide-svelte";
     import jsPDF from "jspdf";
@@ -13,44 +12,20 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
-    import { getSupabase } from "../lib/supabase";
-    import { auth } from "../lib/stores/auth.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
-
-    type Invoice = {
-        id: string;
-        invoice_number: string;
-        status: string;
-        client_id: string | null;
-        project_id: string | null;
-        issue_date: string;
-        due_date: string | null;
-        subtotal: number;
-        tax_rate: number;
-        tax_amount: number;
-        discount: number;
-        total: number;
-        currency: string;
-        notes: string | null;
-        paid_at: string | null;
-    };
-    type Item = {
-        id?: string;
-        description: string;
-        quantity: number;
-        unit_price: number;
-        total: number;
-        position: number;
-    };
-    type Client = {
-        id: string;
-        name: string;
-        company: string | null;
-        email: string | null;
-    };
-    type Project = { id: string; name: string };
+    import {
+        useInvoicesQuery,
+        useSaveInvoiceMutation,
+        useUpdateInvoiceMutation,
+        useDeleteInvoiceMutation,
+        loadInvoiceItems,
+        type Invoice,
+        type InvoiceItem as Item,
+    } from "../lib/queries/invoices";
+    import { useClientsQuery } from "../lib/queries/clients";
+    import { useProjectsQuery } from "../lib/queries/projects";
 
     const STATUSES = ["draft", "sent", "paid", "overdue"];
     const statusTone: Record<string, "muted" | "info" | "success" | "error"> = {
@@ -70,10 +45,13 @@
         };
     }
 
-    let invoices = $state<Invoice[]>([]);
-    let clients = $state<Client[]>([]);
-    let projects = $state<Project[]>([]);
-    let loaded = $state(false);
+    const invoicesQuery = useInvoicesQuery();
+    const clientsQuery = useClientsQuery();
+    const projectsQuery = useProjectsQuery();
+    const saveMutation = useSaveInvoiceMutation();
+    const updateMutation = useUpdateInvoiceMutation();
+    const deleteMutation = useDeleteInvoiceMutation();
+
     let open = $state(false);
     let editing = $state<Invoice | null>(null);
 
@@ -90,6 +68,10 @@
     });
     let items = $state<Item[]>([blankItem(0)]);
 
+    const invoices = $derived($invoicesQuery.data ?? []);
+    const clients = $derived($clientsQuery.data ?? []);
+    const projects = $derived($projectsQuery.data ?? []);
+
     const computed = $derived.by(() => {
         const subtotal = items.reduce(
             (s, i) => s + Number(i.quantity) * Number(i.unit_price),
@@ -102,29 +84,6 @@
         );
         return { subtotal, tax_amount, total };
     });
-
-    async function load() {
-        if (!auth.user) {
-            return;
-        }
-        const supa = getSupabase();
-        const [i, c, p] = await Promise.all([
-            supa
-                .from("invoices")
-                .select("*")
-                .eq("user_id", auth.user.id)
-                .order("created_at", { ascending: false }),
-            supa
-                .from("clients")
-                .select("id,name,company,email")
-                .eq("user_id", auth.user.id),
-            supa.from("projects").select("id,name").eq("user_id", auth.user.id),
-        ]);
-        invoices = (i.data as Invoice[]) ?? [];
-        clients = (c.data as Client[]) ?? [];
-        projects = (p.data as Project[]) ?? [];
-        loaded = true;
-    }
 
     function openNew() {
         editing = null;
@@ -157,14 +116,8 @@
             discount: String(inv.discount),
             notes: inv.notes ?? "",
         };
-        const { data } = await getSupabase()
-            .from("invoice_items")
-            .select("*")
-            .eq("invoice_id", inv.id)
-            .order("position");
-        items = ((data as Item[]) ?? []).length
-            ? (data as Item[])
-            : [blankItem(0)];
+        const data = await loadInvoiceItems(inv.id);
+        items = data.length ? data : [blankItem(0)];
         open = true;
     }
 
@@ -203,15 +156,11 @@
     }
 
     async function save() {
-        if (!auth.user) {
-            return;
-        }
         if (!form.invoice_number.trim()) {
             toast.error("Invoice number required");
             return;
         }
         const payload = {
-            user_id: auth.user.id,
             invoice_number: form.invoice_number.trim().slice(0, 50),
             status: form.status,
             client_id: form.client_id === "none" ? null : form.client_id,
@@ -227,52 +176,21 @@
             notes: form.notes.trim() || null,
             paid_at: form.status === "paid" ? new Date().toISOString() : null,
         };
-        const supa = getSupabase();
-        let invId = editing?.id;
-        if (editing) {
-            const { error } = await supa
-                .from("invoices")
-                .update(payload)
-                .eq("id", editing.id);
-            if (error) {
-                toast.error(invoiceSaveErrorMessage(error));
-                return;
-            }
-            await supa
-                .from("invoice_items")
-                .delete()
-                .eq("invoice_id", editing.id);
-        } else {
-            const { data, error } = await supa
-                .from("invoices")
-                .insert(payload)
-                .select()
-                .single();
-            if (error) {
-                toast.error(invoiceSaveErrorMessage(error));
-                return;
-            }
-            invId = data.id;
+        try {
+            await $saveMutation.mutateAsync({
+                editingId: editing?.id ?? null,
+                payload,
+                items,
+            });
+            toast.success(editing ? "Invoice updated" : "Invoice created");
+            open = false;
+        } catch (err) {
+            toast.error(
+                invoiceSaveErrorMessage(
+                    err as { code?: string; message: string },
+                ),
+            );
         }
-        if (invId) {
-            const rows = items
-                .filter((i) => i.description.trim())
-                .map((i, idx) => ({
-                    user_id: auth.user!.id,
-                    invoice_id: invId!,
-                    description: i.description.slice(0, 500),
-                    quantity: Number(i.quantity),
-                    unit_price: Number(i.unit_price),
-                    total: Number(i.quantity) * Number(i.unit_price),
-                    position: idx,
-                }));
-            if (rows.length) {
-                await supa.from("invoice_items").insert(rows);
-            }
-        }
-        toast.success(editing ? "Invoice updated" : "Invoice created");
-        open = false;
-        load();
     }
 
     async function remove(id: string) {
@@ -286,25 +204,27 @@
         ) {
             return;
         }
-        await getSupabase().from("invoices").delete().eq("id", id);
-        load();
+        try {
+            await $deleteMutation.mutateAsync(id);
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 
     async function markPaid(inv: Invoice) {
-        await getSupabase()
-            .from("invoices")
-            .update({ status: "paid", paid_at: new Date().toISOString() })
-            .eq("id", inv.id);
-        toast.success("Marked as paid");
-        load();
+        try {
+            await $updateMutation.mutateAsync({
+                id: inv.id,
+                patch: { status: "paid", paid_at: new Date().toISOString() },
+            });
+            toast.success("Marked as paid");
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 
     async function exportPdf(inv: Invoice) {
-        const { data: itemRows } = await getSupabase()
-            .from("invoice_items")
-            .select("*")
-            .eq("invoice_id", inv.id)
-            .order("position");
+        const itemRows = await loadInvoiceItems(inv.id);
         const client = clients.find((c) => c.id === inv.client_id);
         const doc = new jsPDF();
         const brand = profile.profile?.brand_color || "#7c5cff";
@@ -348,12 +268,7 @@
         doc.text("Price", 150, y);
         doc.text("Total", 178, y);
         y += 8;
-        const rows = (itemRows ?? []) as Array<{
-            description: string;
-            quantity: number;
-            unit_price: number;
-            total: number;
-        }>;
+        const rows = itemRows;
         for (const it of rows) {
             doc.text(String(it.description).slice(0, 70), 16, y);
             doc.text(String(it.quantity), 130, y);
@@ -397,8 +312,6 @@
         }
         doc.save(`${inv.invoice_number}.pdf`);
     }
-
-    onMount(load);
 </script>
 
 <div class="p-6">
@@ -413,7 +326,7 @@
         {/snippet}
     </PageHeader>
 
-    {#if !loaded}
+    {#if $invoicesQuery.isLoading}
         <div class="text-xs text-vscode-description">Loading…</div>
     {:else if invoices.length === 0}
         <Card>

@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
     import { dndzone, type DndEvent } from "svelte-dnd-action";
     import { flip } from "svelte/animate";
@@ -11,11 +10,17 @@
     import Textarea from "../lib/components/ui/Textarea.svelte";
     import Field from "../lib/components/ui/Field.svelte";
     import Dialog from "../lib/components/ui/Dialog.svelte";
-    import { getSupabase } from "../lib/supabase";
-    import { auth } from "../lib/stores/auth.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
+    import {
+        useLeadsQuery,
+        useCreateLeadMutation,
+        useDeleteLeadMutation,
+        useConvertLeadMutation,
+        useReorderLeadsMutation,
+        type Lead,
+    } from "../lib/queries/leads";
 
     const STAGES = [
         { id: "new", label: "New" },
@@ -24,19 +29,6 @@
         { id: "won", label: "Won" },
         { id: "lost", label: "Lost" },
     ];
-
-    type Lead = {
-        id: string;
-        name: string;
-        company: string | null;
-        email: string | null;
-        phone: string | null;
-        source: string | null;
-        stage: string;
-        value: number;
-        notes: string | null;
-        position: number;
-    };
 
     const blank = {
         name: "",
@@ -48,46 +40,40 @@
         notes: "",
     };
 
-    let leads = $state<Lead[]>([]);
-    let columns = $state<Record<string, Lead[]>>({});
+    const leadsQuery = useLeadsQuery();
+    const createMutation = useCreateLeadMutation();
+    const deleteMutation = useDeleteLeadMutation();
+    const convertMutation = useConvertLeadMutation();
+    const reorderMutation = useReorderLeadsMutation();
+
     let open = $state(false);
     let form = $state({ ...blank });
+    // Local optimistic dnd state — synced from query data, mutated by drag.
+    let columns = $state<Record<string, Lead[]>>({});
 
-    function rebuildColumns(all: Lead[]) {
+    const leads = $derived($leadsQuery.data ?? []);
+
+    // Rebuild columns whenever leads change (initial load + after mutations).
+    $effect(() => {
         const map: Record<string, Lead[]> = Object.fromEntries(
             STAGES.map((s) => [s.id, [] as Lead[]]),
         );
-        for (const l of all) {
+        for (const l of leads) {
             (map[l.stage] ?? map["new"]).push(l);
         }
         for (const k of Object.keys(map)) {
             map[k].sort((a, b) => a.position - b.position);
         }
         columns = map;
-    }
-
-    async function load() {
-        if (!auth.user) {
-            return;
-        }
-        const { data } = await getSupabase()
-            .from("leads")
-            .select("*")
-            .eq("user_id", auth.user.id)
-            .order("position");
-        leads = (data as Lead[]) ?? [];
-        rebuildColumns(leads);
-    }
+    });
 
     async function create() {
-        if (!auth.user || !form.name.trim()) {
+        if (!form.name.trim()) {
             toast.error("Name required");
             return;
         }
-        const { error } = await getSupabase()
-            .from("leads")
-            .insert({
-                user_id: auth.user.id,
+        try {
+            await $createMutation.mutateAsync({
                 name: form.name.trim().slice(0, 200),
                 company: form.company.trim() || null,
                 email: form.email.trim() || null,
@@ -98,14 +84,12 @@
                 stage: "new",
                 position: (columns["new"] ?? []).length,
             });
-        if (error) {
-            toast.error(error.message);
-            return;
+            toast.success("Lead added");
+            form = { ...blank };
+            open = false;
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        toast.success("Lead added");
-        form = { ...blank };
-        open = false;
-        load();
     }
 
     async function remove(id: string) {
@@ -118,37 +102,20 @@
         ) {
             return;
         }
-        await getSupabase().from("leads").delete().eq("id", id);
-        load();
+        try {
+            await $deleteMutation.mutateAsync(id);
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 
     async function convert(lead: Lead) {
-        if (!auth.user) {
-            return;
+        try {
+            await $convertMutation.mutateAsync(lead);
+            toast.success("Lead converted to client");
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        const supa = getSupabase();
-        const { data, error } = await supa
-            .from("clients")
-            .insert({
-                user_id: auth.user.id,
-                name: lead.name,
-                company: lead.company,
-                email: lead.email,
-                phone: lead.phone,
-                notes: lead.notes,
-            })
-            .select()
-            .single();
-        if (error) {
-            toast.error(error.message);
-            return;
-        }
-        await supa
-            .from("leads")
-            .update({ stage: "won", converted_client_id: data.id })
-            .eq("id", lead.id);
-        toast.success("Lead converted to client");
-        load();
     }
 
     function onConsider(stageId: string, e: CustomEvent<DndEvent<Lead>>) {
@@ -156,21 +123,16 @@
     }
     async function onFinalize(stageId: string, e: CustomEvent<DndEvent<Lead>>) {
         columns = { ...columns, [stageId]: e.detail.items };
-        // Persist: every card in the column gets stage=stageId and position=index
         const updates = e.detail.items.map((l, idx) => ({
             id: l.id,
             stage: stageId,
             position: idx,
         }));
-        const supa = getSupabase();
-        await Promise.all(
-            updates.map((u) =>
-                supa
-                    .from("leads")
-                    .update({ stage: u.stage, position: u.position })
-                    .eq("id", u.id),
-            ),
-        );
+        try {
+            await $reorderMutation.mutateAsync(updates);
+        } catch (err) {
+            toast.error((err as Error).message);
+        }
     }
 
     function stageTotal(stageId: string) {
@@ -179,8 +141,6 @@
             0,
         );
     }
-
-    onMount(load);
 </script>
 
 <div class="p-6">
