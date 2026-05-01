@@ -4,6 +4,10 @@ A complete CRM that runs **inside VS Code**, on top of **your own Supabase proje
 
 Your data stays in your Supabase project. The extension never sees a third-party server.
 
+### Setup walkthrough (video)
+
+[![Watch the vs-crm + Supabase setup walkthrough on YouTube](https://img.youtube.com/vi/QR_4xnOcwzI/maxresdefault.jpg)](https://www.youtube.com/watch?v=QR_4xnOcwzI)
+
 ## Features
 
 - **Dashboard** — at-a-glance metrics: clients, active projects, unpaid invoices, monthly revenue, recent activity.

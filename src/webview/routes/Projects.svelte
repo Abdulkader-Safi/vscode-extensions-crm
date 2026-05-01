@@ -1,6 +1,13 @@
 <script lang="ts">
     import { toast } from "svelte-sonner";
-    import { Plus, Trash2, Pencil, Calendar } from "lucide-svelte";
+    import {
+        Plus,
+        Trash2,
+        Pencil,
+        Calendar,
+        ArrowDown,
+        ArrowUp,
+    } from "lucide-svelte";
     import { push } from "svelte-spa-router";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
@@ -15,6 +22,7 @@
     import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
+    import { compareBy, type SortDir } from "../lib/sort";
     import {
         useProjectsQuery,
         useCreateProjectMutation,
@@ -53,6 +61,45 @@
 
     const projects = $derived($projectsQuery.data ?? []);
     const clients = $derived($clientsQuery.data ?? []);
+
+    type SortField = "created_at" | "name" | "end_date" | "budget";
+    let filters = $state({ status: "", clientId: "" });
+    let sort = $state<{ field: SortField; direction: SortDir }>({
+        field: "created_at",
+        direction: "desc",
+    });
+
+    const filteredSorted = $derived.by(() => {
+        const filtered = projects.filter(
+            (p) =>
+                (!filters.status || p.status === filters.status) &&
+                (!filters.clientId || p.client_id === filters.clientId),
+        );
+        const sortKey: (p: Project) => unknown =
+            sort.field === "budget"
+                ? (p) => Number(p.budget ?? 0)
+                : (p) => p[sort.field];
+        return [...filtered].sort(compareBy(sortKey, sort.direction));
+    });
+
+    const filtersActive = $derived(
+        !!filters.status ||
+            !!filters.clientId ||
+            sort.field !== "created_at" ||
+            sort.direction !== "desc",
+    );
+
+    function toggleDirection() {
+        sort = {
+            field: sort.field,
+            direction: sort.direction === "asc" ? "desc" : "asc",
+        };
+    }
+
+    function clearFilters() {
+        filters = { status: "", clientId: "" };
+        sort = { field: "created_at", direction: "desc" };
+    }
 
     function openNew() {
         editing = null;
@@ -159,8 +206,60 @@
             </EmptyState>
         </Card>
     {:else}
+        <div class="mb-3 flex flex-wrap items-end gap-2">
+            <Field label="Status">
+                <Select bind:value={filters.status}>
+                    <option value="">All</option>
+                    {#each STATUSES as s (s.id)}
+                        <option value={s.id}>{s.label}</option>
+                    {/each}
+                </Select>
+            </Field>
+            <Field label="Client">
+                <Select bind:value={filters.clientId}>
+                    <option value="">All</option>
+                    {#each clients as c (c.id)}
+                        <option value={c.id}>{c.name}</option>
+                    {/each}
+                </Select>
+            </Field>
+            <Field label="Sort by">
+                <Select bind:value={sort.field}>
+                    <option value="created_at">Created</option>
+                    <option value="name">Name</option>
+                    <option value="end_date">End date</option>
+                    <option value="budget">Budget</option>
+                </Select>
+            </Field>
+            <Button
+                variant="outline"
+                size="icon"
+                aria-label={sort.direction === "asc"
+                    ? "Sort ascending"
+                    : "Sort descending"}
+                onclick={toggleDirection}
+            >
+                {#if sort.direction === "asc"}
+                    <ArrowUp class="h-3.5 w-3.5" />
+                {:else}
+                    <ArrowDown class="h-3.5 w-3.5" />
+                {/if}
+            </Button>
+            {#if filtersActive}
+                <Button variant="ghost" size="sm" onclick={clearFilters}>
+                    Clear
+                </Button>
+            {/if}
+        </div>
+        {#if filteredSorted.length === 0}
+            <Card>
+                <p class="py-6 text-center text-xs text-vscode-description">
+                    No projects match these filters.
+                </p>
+            </Card>
+        {:else}
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {#each projects as p (p.id)}
+            {#each filteredSorted as p (p.id)}
                 {@const s = statusInfo(p.status)}
                 <Card class="group cursor-pointer" onclick={() => navigateToDetail(p)}>
                     <div class="mb-2 flex items-start justify-between">
@@ -222,6 +321,7 @@
                 </Card>
             {/each}
         </div>
+        {/if}
     {/if}
 </div>
 

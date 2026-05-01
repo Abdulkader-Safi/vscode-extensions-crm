@@ -9,16 +9,20 @@
     import Field from "../lib/components/ui/Field.svelte";
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
+    import SortableHeader from "../lib/components/ui/SortableHeader.svelte";
     import StatCard from "../lib/components/StatCard.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
+    import { compareBy, type SortDir } from "../lib/sort";
+    import { inDateRange } from "../lib/dateFilter";
     import {
         useExpensesQuery,
         useCreateExpenseMutation,
         useDeleteExpenseMutation,
     } from "../lib/queries/expenses";
     import { useProjectsQuery } from "../lib/queries/projects";
+    import { useClientsQuery } from "../lib/queries/clients";
 
     const CATEGORIES = [
         "software",
@@ -34,6 +38,7 @@
 
     const expensesQuery = useExpensesQuery();
     const projectsQuery = useProjectsQuery();
+    const clientsQuery = useClientsQuery();
     const createMutation = useCreateExpenseMutation();
     const deleteMutation = useDeleteExpenseMutation();
 
@@ -49,6 +54,72 @@
 
     const expenses = $derived($expensesQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
+    const clients = $derived($clientsQuery.data ?? []);
+
+    type SortField = "expense_date" | "category" | "amount";
+    let filters = $state({ category: "", from: "", to: "", clientId: "" });
+    let sort = $state<{ field: SortField; direction: SortDir }>({
+        field: "expense_date",
+        direction: "desc",
+    });
+
+    const clientIdByProject = $derived(
+        new Map(projects.map((p) => [p.id, p.client_id])),
+    );
+
+    const filteredSorted = $derived.by(() => {
+        const filtered = expenses.filter((e) => {
+            if (filters.category && e.category !== filters.category) {
+                return false;
+            }
+            if (!inDateRange(e.expense_date, filters.from, filters.to)) {
+                return false;
+            }
+            if (filters.clientId) {
+                const cid = e.project_id
+                    ? clientIdByProject.get(e.project_id) ?? null
+                    : null;
+                if (cid !== filters.clientId) {
+                    return false;
+                }
+            }
+            return true;
+        });
+        const sortKey: (e: (typeof expenses)[number]) => unknown =
+            sort.field === "amount"
+                ? (e) => Number(e.amount)
+                : (e) => e[sort.field];
+        return [...filtered].sort(compareBy(sortKey, sort.direction));
+    });
+
+    const usedCategories = $derived(
+        Array.from(new Set(expenses.map((e) => e.category))).sort(),
+    );
+
+    const filtersActive = $derived(
+        !!filters.category ||
+            !!filters.from ||
+            !!filters.to ||
+            !!filters.clientId ||
+            sort.field !== "expense_date" ||
+            sort.direction !== "desc",
+    );
+
+    function toggleSort(field: SortField) {
+        if (sort.field === field) {
+            sort = {
+                field,
+                direction: sort.direction === "asc" ? "desc" : "asc",
+            };
+        } else {
+            sort = { field, direction: "asc" };
+        }
+    }
+
+    function clearFilters() {
+        filters = { category: "", from: "", to: "", clientId: "" };
+        sort = { field: "expense_date", direction: "desc" };
+    }
 
     const total = $derived(expenses.reduce((s, e) => s + Number(e.amount), 0));
     // Use the actual current month — `monthlyMap[0]` would mislabel the most
@@ -129,23 +200,87 @@
             />
         </Card>
     {:else}
+        <div class="mb-3 flex flex-wrap items-end gap-2">
+            <Field label="Category">
+                <Select bind:value={filters.category}>
+                    <option value="">All</option>
+                    {#each usedCategories as c (c)}
+                        <option value={c}>{c}</option>
+                    {/each}
+                </Select>
+            </Field>
+            <Field label="Date from">
+                <Input type="date" bind:value={filters.from} />
+            </Field>
+            <Field label="Date to">
+                <Input type="date" bind:value={filters.to} />
+            </Field>
+            <Field label="Client">
+                <Select bind:value={filters.clientId}>
+                    <option value="">All</option>
+                    {#each clients as c (c.id)}
+                        <option value={c.id}>{c.name}</option>
+                    {/each}
+                </Select>
+            </Field>
+            {#if filtersActive}
+                <Button variant="ghost" size="sm" onclick={clearFilters}>
+                    Clear
+                </Button>
+            {/if}
+        </div>
         <Card>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead>
-                        <tr
-                            class="border-b border-vscode-border text-left text-[11px] uppercase tracking-wide text-vscode-description"
-                        >
-                            <th class="pb-2 font-medium">Date</th>
-                            <th class="pb-2 font-medium">Category</th>
-                            <th class="pb-2 font-medium">Vendor</th>
-                            <th class="pb-2 font-medium">Notes</th>
-                            <th class="pb-2 text-right font-medium">Amount</th>
+                        <tr class="border-b border-vscode-border text-left">
+                            <SortableHeader
+                                field="expense_date"
+                                current={sort}
+                                onsort={toggleSort}
+                            >
+                                Date
+                            </SortableHeader>
+                            <SortableHeader
+                                field="category"
+                                current={sort}
+                                onsort={toggleSort}
+                            >
+                                Category
+                            </SortableHeader>
+                            <th
+                                class="pb-2 font-medium text-[11px] uppercase tracking-wide text-vscode-description"
+                            >
+                                Vendor
+                            </th>
+                            <th
+                                class="pb-2 font-medium text-[11px] uppercase tracking-wide text-vscode-description"
+                            >
+                                Notes
+                            </th>
+                            <SortableHeader
+                                field="amount"
+                                current={sort}
+                                align="right"
+                                onsort={toggleSort}
+                            >
+                                Amount
+                            </SortableHeader>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {#each expenses as e (e.id)}
+                        {#if filteredSorted.length === 0}
+                            <tr>
+                                <td
+                                    colspan="6"
+                                    class="py-6 text-center text-xs text-vscode-description"
+                                >
+                                    No expenses match these filters.
+                                </td>
+                            </tr>
+                        {/if}
+                        {#each filteredSorted as e (e.id)}
                             <tr
                                 class="group border-b border-vscode-border last:border-0"
                             >

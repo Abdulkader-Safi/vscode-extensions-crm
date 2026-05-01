@@ -14,11 +14,11 @@
 - [x] Add avatar upload UI in Settings (writes to `profiles.avatar_url`)
 
 ### Medium impact
-- [ ] Add status / date-range / client / tag filters to Invoices
-- [ ] Add status / date-range / client filters to Expenses
-- [ ] Add status / client filters to Projects
-- [ ] Add status / project / priority filters to Tasks
-- [ ] Add column sorting on every table
+- [x] Add status / date-range / client filters to Invoices — tag filter dropped (no `tags` column on `invoices`; tags live on `clients` only)
+- [x] Add category / date-range / client filters to Expenses — status filter dropped (no `status` column on `expenses`); client joins through `expenses.project_id → projects.client_id`
+- [x] Add status / client filters to Projects (with sort field + direction toggle in toolbar)
+- [x] Add status / project / priority filters to Tasks (with sort field + direction toggle in toolbar)
+- [x] Add column sorting on every table — clickable headers on Invoices/Expenses, sort dropdown for Projects (cards) and Tasks (list)
 - [x] ~~Add a "vs-crm: Apply pending migrations" command for shipped upgrades~~ — superseded: pending migrations now auto-apply on extension activate (`src/extension/bootstrap/autoApply.ts`). Service-role key + `_vscrm_exec_sql` helper persist so future bundles ship friction-free.
 - [ ] Add a top-level error boundary with a "Reload" button
 - [ ] Show a "Reconnecting…" banner when Supabase is unreachable

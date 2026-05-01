@@ -1,7 +1,15 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
     import { toast } from "svelte-sonner";
-    import { Plus, Trash2, Play, Square, Clock } from "lucide-svelte";
+    import {
+        Plus,
+        Trash2,
+        Play,
+        Square,
+        Clock,
+        ArrowDown,
+        ArrowUp,
+    } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -14,6 +22,7 @@
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { formatMinutes } from "../lib/utils";
+    import { compareBy, type SortDir } from "../lib/sort";
     import {
         useTasksQuery,
         useCreateTaskMutation,
@@ -23,6 +32,8 @@
         type Task,
     } from "../lib/queries/tasks";
     import { useProjectsQuery } from "../lib/queries/projects";
+
+    const PRIORITY_RANK = { low: 0, medium: 1, high: 2, urgent: 3 } as const;
 
     const PRIORITIES = ["low", "medium", "high", "urgent"];
     const STATUSES = ["todo", "in_progress", "done"];
@@ -68,6 +79,50 @@
 
     const tasks = $derived($tasksQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
+
+    type SortField = "created_at" | "due_date" | "priority" | "title";
+    let filters = $state({ status: "", projectId: "", priority: "" });
+    let sort = $state<{ field: SortField; direction: SortDir }>({
+        field: "created_at",
+        direction: "desc",
+    });
+
+    const filteredSorted = $derived.by(() => {
+        const filtered = tasks.filter(
+            (t) =>
+                (!filters.status || t.status === filters.status) &&
+                (!filters.priority || t.priority === filters.priority) &&
+                (!filters.projectId || t.project_id === filters.projectId),
+        );
+        const sortKey: (t: Task) => unknown =
+            sort.field === "priority"
+                ? (t) =>
+                      PRIORITY_RANK[
+                          t.priority as keyof typeof PRIORITY_RANK
+                      ] ?? -1
+                : (t) => t[sort.field];
+        return [...filtered].sort(compareBy(sortKey, sort.direction));
+    });
+
+    const filtersActive = $derived(
+        !!filters.status ||
+            !!filters.projectId ||
+            !!filters.priority ||
+            sort.field !== "created_at" ||
+            sort.direction !== "desc",
+    );
+
+    function toggleDirection() {
+        sort = {
+            field: sort.field,
+            direction: sort.direction === "asc" ? "desc" : "asc",
+        };
+    }
+
+    function clearFilters() {
+        filters = { status: "", projectId: "", priority: "" };
+        sort = { field: "created_at", direction: "desc" };
+    }
 
     async function create() {
         if (!form.title.trim()) {
@@ -192,9 +247,67 @@
             </EmptyState>
         </Card>
     {:else}
+        <div class="mb-3 flex flex-wrap items-end gap-2">
+            <Field label="Status">
+                <Select bind:value={filters.status}>
+                    <option value="">All</option>
+                    {#each STATUSES as s (s)}
+                        <option value={s}>{s.replace("_", " ")}</option>
+                    {/each}
+                </Select>
+            </Field>
+            <Field label="Project">
+                <Select bind:value={filters.projectId}>
+                    <option value="">All</option>
+                    {#each projects as p (p.id)}
+                        <option value={p.id}>{p.name}</option>
+                    {/each}
+                </Select>
+            </Field>
+            <Field label="Priority">
+                <Select bind:value={filters.priority}>
+                    <option value="">All</option>
+                    {#each PRIORITIES as p (p)}
+                        <option value={p}>{p}</option>
+                    {/each}
+                </Select>
+            </Field>
+            <Field label="Sort by">
+                <Select bind:value={sort.field}>
+                    <option value="created_at">Created</option>
+                    <option value="due_date">Due date</option>
+                    <option value="priority">Priority</option>
+                    <option value="title">Title</option>
+                </Select>
+            </Field>
+            <Button
+                variant="outline"
+                size="icon"
+                aria-label={sort.direction === "asc"
+                    ? "Sort ascending"
+                    : "Sort descending"}
+                onclick={toggleDirection}
+            >
+                {#if sort.direction === "asc"}
+                    <ArrowUp class="h-3.5 w-3.5" />
+                {:else}
+                    <ArrowDown class="h-3.5 w-3.5" />
+                {/if}
+            </Button>
+            {#if filtersActive}
+                <Button variant="ghost" size="sm" onclick={clearFilters}>
+                    Clear
+                </Button>
+            {/if}
+        </div>
         <Card>
             <div class="divide-y divide-vscode-border">
-                {#each tasks as t (t.id)}
+                {#if filteredSorted.length === 0}
+                    <p class="py-6 text-center text-xs text-vscode-description">
+                        No tasks match these filters.
+                    </p>
+                {/if}
+                {#each filteredSorted as t (t.id)}
                     {@const isRunning = running?.taskId === t.id}
                     {@const pn = projectName(t.project_id)}
                     <div class="group flex items-center gap-3 py-2">

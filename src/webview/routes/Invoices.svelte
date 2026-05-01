@@ -12,9 +12,12 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
+    import SortableHeader from "../lib/components/ui/SortableHeader.svelte";
     import { confirm } from "../lib/confirm.svelte";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
+    import { compareBy, type SortDir } from "../lib/sort";
+    import { inDateRange } from "../lib/dateFilter";
     import {
         useInvoicesQuery,
         useSaveInvoiceMutation,
@@ -71,6 +74,52 @@
     const invoices = $derived($invoicesQuery.data ?? []);
     const clients = $derived($clientsQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
+
+    type SortField = "invoice_number" | "issue_date" | "total";
+    let filters = $state({ status: "", from: "", to: "", clientId: "" });
+    let sort = $state<{ field: SortField; direction: SortDir }>({
+        field: "issue_date",
+        direction: "desc",
+    });
+
+    const filteredSorted = $derived.by(() => {
+        const filtered = invoices.filter(
+            (i) =>
+                (!filters.status || i.status === filters.status) &&
+                (!filters.clientId || i.client_id === filters.clientId) &&
+                inDateRange(i.issue_date, filters.from, filters.to),
+        );
+        const sortKey: (i: (typeof invoices)[number]) => unknown =
+            sort.field === "total"
+                ? (i) => Number(i.total)
+                : (i) => i[sort.field];
+        return [...filtered].sort(compareBy(sortKey, sort.direction));
+    });
+
+    const filtersActive = $derived(
+        !!filters.status ||
+            !!filters.from ||
+            !!filters.to ||
+            !!filters.clientId ||
+            sort.field !== "issue_date" ||
+            sort.direction !== "desc",
+    );
+
+    function toggleSort(field: SortField) {
+        if (sort.field === field) {
+            sort = {
+                field,
+                direction: sort.direction === "asc" ? "desc" : "asc",
+            };
+        } else {
+            sort = { field, direction: "asc" };
+        }
+    }
+
+    function clearFilters() {
+        filters = { status: "", from: "", to: "", clientId: "" };
+        sort = { field: "issue_date", direction: "desc" };
+    }
 
     const computed = $derived.by(() => {
         const subtotal = items.reduce(
@@ -342,23 +391,89 @@
             </EmptyState>
         </Card>
     {:else}
+        <div class="mb-3 flex flex-wrap items-end gap-2">
+            <Field label="Status">
+                <Select bind:value={filters.status}>
+                    <option value="">All</option>
+                    {#each STATUSES as s (s)}
+                        <option value={s}>{s}</option>
+                    {/each}
+                </Select>
+            </Field>
+            <Field label="Issued from">
+                <Input type="date" bind:value={filters.from} />
+            </Field>
+            <Field label="Issued to">
+                <Input type="date" bind:value={filters.to} />
+            </Field>
+            <Field label="Client">
+                <Select bind:value={filters.clientId}>
+                    <option value="">All</option>
+                    {#each clients as c (c.id)}
+                        <option value={c.id}>{c.name}</option>
+                    {/each}
+                </Select>
+            </Field>
+            {#if filtersActive}
+                <Button variant="ghost" size="sm" onclick={clearFilters}>
+                    Clear
+                </Button>
+            {/if}
+        </div>
         <Card>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead>
                         <tr
-                            class="border-b border-vscode-border text-left text-[11px] uppercase tracking-wide text-vscode-description"
+                            class="border-b border-vscode-border text-left"
                         >
-                            <th class="pb-2 font-medium">Number</th>
-                            <th class="pb-2 font-medium">Client</th>
-                            <th class="pb-2 font-medium">Issued</th>
-                            <th class="pb-2 font-medium">Status</th>
-                            <th class="pb-2 text-right font-medium">Total</th>
+                            <SortableHeader
+                                field="invoice_number"
+                                current={sort}
+                                onsort={toggleSort}
+                            >
+                                Number
+                            </SortableHeader>
+                            <th
+                                class="pb-2 font-medium text-[11px] uppercase tracking-wide text-vscode-description"
+                            >
+                                Client
+                            </th>
+                            <SortableHeader
+                                field="issue_date"
+                                current={sort}
+                                onsort={toggleSort}
+                            >
+                                Issued
+                            </SortableHeader>
+                            <th
+                                class="pb-2 font-medium text-[11px] uppercase tracking-wide text-vscode-description"
+                            >
+                                Status
+                            </th>
+                            <SortableHeader
+                                field="total"
+                                current={sort}
+                                align="right"
+                                onsort={toggleSort}
+                            >
+                                Total
+                            </SortableHeader>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {#each invoices as inv (inv.id)}
+                        {#if filteredSorted.length === 0}
+                            <tr>
+                                <td
+                                    colspan="6"
+                                    class="py-6 text-center text-xs text-vscode-description"
+                                >
+                                    No invoices match these filters.
+                                </td>
+                            </tr>
+                        {/if}
+                        {#each filteredSorted as inv (inv.id)}
                             <tr
                                 class="group border-b border-vscode-border last:border-0"
                             >
