@@ -46,6 +46,7 @@ async function fetchInvoices(): Promise<Invoice[]> {
     .from("invoices")
     .select("*")
     .eq("user_id", auth.user.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
   if (error) {
     throw error;
@@ -74,11 +75,12 @@ export function useInvoicesQuery() {
 
 // Fetch invoice items on demand (e.g. PDF export) — we don't keep them
 // in sync with the invoice list query.
-export async function loadInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
+export async function loadInvoiceItems(
+  invoiceId: string,
+): Promise<InvoiceItem[]> {
   return fetchInvoiceItems(invoiceId);
 }
 
-type DeleteCtx = { previous: Invoice[] };
 type UpdateCtx = { previous: Invoice[] };
 
 // Save-invoice (upsert + replace items) — invoice + line items committed
@@ -203,35 +205,4 @@ export function useUpdateInvoiceMutation() {
   });
 }
 
-export function useDeleteInvoiceMutation() {
-  const client = useQueryClient();
-  return createMutation<string, Error, string, DeleteCtx>({
-    mutationFn: async (id) => {
-      const { error } = await getSupabase()
-        .from("invoices")
-        .delete()
-        .eq("id", id);
-      if (error) {
-        throw error;
-      }
-      return id;
-    },
-    onMutate: async (id) => {
-      await client.cancelQueries({ queryKey: qk.invoices() });
-      const previous = client.getQueryData<Invoice[]>(qk.invoices()) ?? [];
-      client.setQueryData<Invoice[]>(
-        qk.invoices(),
-        previous.filter((i) => i.id !== id),
-      );
-      return { previous };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx) {
-        client.setQueryData(qk.invoices(), ctx.previous);
-      }
-    },
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: qk.invoices() });
-    },
-  });
-}
+// Delete uses the centralized softDelete() helper in src/webview/lib/softDelete.ts.

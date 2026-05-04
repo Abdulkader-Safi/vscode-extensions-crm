@@ -1,0 +1,102 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "clients": "Clients",
+    "leads": "Leads",
+    "projects": "Projects",
+    "tasks": "Tasks",
+    "invoices": "Invoices",
+    "expenses": "Expenses",
+    "reports": "Reports",
+    "settings": "Settings",
+    "trash": "Trash",
+    "signOut": "Sign out"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "create": "Create",
+    "update": "Update",
+    "loading": "Loading…",
+    "search": "Search",
+    "select": "Select",
+    "selectAll": "Select all",
+    "all": "All",
+    "clear": "Clear",
+    "saveChanges": "Save changes",
+    "verifyAndSave": "Verify & save",
+    "downloadPdf": "Download PDF",
+    "preview": "Preview"
+  },
+  "page": {
+    "dashboard": {
+      "title": "Dashboard",
+      "description": "Your business at a glance."
+    },
+    "clients": {
+      "title": "Clients",
+      "description": "Manage everyone you work with.",
+      "newAction": "Add client",
+      "searchPlaceholder": "Search clients..."
+    },
+    "leads": {
+      "title": "Leads",
+      "description": "Track opportunities through your pipeline.",
+      "newAction": "New lead"
+    },
+    "projects": {
+      "title": "Projects",
+      "description": "Track all the work you're doing.",
+      "newAction": "New project"
+    },
+    "tasks": {
+      "title": "Tasks",
+      "description": "Stay on top of every deliverable.",
+      "newAction": "New task",
+      "boardLink": "Board"
+    },
+    "invoices": {
+      "title": "Invoices",
+      "description": "Send branded invoices and track payments.",
+      "newAction": "New invoice"
+    },
+    "expenses": {
+      "title": "Expenses",
+      "description": "Log every business cost.",
+      "newAction": "New expense"
+    },
+    "reports": {
+      "title": "Reports",
+      "description": "See where your business stands.",
+      "exportCsv": "Export CSV"
+    },
+    "settings": {
+      "title": "Settings",
+      "description": "Customize your workspace and branding."
+    },
+    "trash": {
+      "title": "Trash",
+      "description": "Restore items within 5 seconds via the toast Undo, or anytime from here. Purging is permanent."
+    }
+  },
+  "settings": {
+    "profile": "Profile",
+    "displayName": "Display name",
+    "company": "Company",
+    "email": "Email",
+    "language": "Language",
+    "currency": "Currency",
+    "taxRate": "Default tax rate (%)",
+    "branding": "Branding",
+    "brandColor": "Brand color (used on PDFs)",
+    "connection": "Connection",
+    "connectedTo": "Currently connected to",
+    "change": "Change…",
+    "timezone": "Timezone",
+    "fxRates": "Currency rates",
+    "fxRatesHint": "Per-currency rate against your base currency. Used in Reports to normalize totals."
+  }
+}

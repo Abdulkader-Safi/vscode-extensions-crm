@@ -31,6 +31,7 @@ async function fetchTasks(projectId?: string): Promise<Task[]> {
     .from("tasks")
     .select("*")
     .eq("user_id", auth.user.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
   if (projectId) {
     q = q.eq("project_id", projectId);
@@ -51,7 +52,6 @@ export function useTasksQuery(projectId?: string) {
 
 type CreateCtx = { previous: Task[]; optimisticId: string };
 type UpdateCtx = { previous: Task[] };
-type DeleteCtx = { previous: Task[] };
 
 export function useCreateTaskMutation() {
   const client = useQueryClient();
@@ -140,35 +140,7 @@ export function useUpdateTaskMutation() {
   });
 }
 
-export function useDeleteTaskMutation() {
-  const client = useQueryClient();
-  return createMutation<string, Error, string, DeleteCtx>({
-    mutationFn: async (id) => {
-      const { error } = await getSupabase().from("tasks").delete().eq("id", id);
-      if (error) {
-        throw error;
-      }
-      return id;
-    },
-    onMutate: async (id) => {
-      await client.cancelQueries({ queryKey: qk.tasks() });
-      const previous = client.getQueryData<Task[]>(qk.tasks()) ?? [];
-      client.setQueryData<Task[]>(
-        qk.tasks(),
-        previous.filter((t) => t.id !== id),
-      );
-      return { previous };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx) {
-        client.setQueryData(qk.tasks(), ctx.previous);
-      }
-    },
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: qk.tasks() });
-    },
-  });
-}
+// Delete uses the centralized softDelete() helper in src/webview/lib/softDelete.ts.
 
 // Stop-timer mutation: bumps time_spent_minutes on the task and inserts a
 // time_entries row in one logical step. Optimistic patch keeps the UI snappy;

@@ -11,6 +11,8 @@ type Profile = {
   currency: string;
   tax_rate: number;
   language: string;
+  timezone: string;
+  fx_rates: Record<string, number>;
 };
 
 class ProfileStore {
@@ -53,6 +55,14 @@ class ProfileStore {
 
   get taxRate(): number {
     return Number(this.profile?.tax_rate ?? 0);
+  }
+
+  get timezone(): string {
+    return this.profile?.timezone ?? "UTC";
+  }
+
+  get fxRates(): Record<string, number> {
+    return this.profile?.fx_rates ?? {};
   }
 }
 

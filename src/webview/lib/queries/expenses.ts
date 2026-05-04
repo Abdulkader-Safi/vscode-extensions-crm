@@ -30,6 +30,7 @@ async function fetchExpenses(): Promise<Expense[]> {
     .from("expenses")
     .select("*")
     .eq("user_id", auth.user.id)
+    .is("deleted_at", null)
     .order("expense_date", { ascending: false });
   if (error) {
     throw error;
@@ -45,7 +46,6 @@ export function useExpensesQuery() {
 }
 
 type CreateCtx = { previous: Expense[]; optimisticId: string };
-type DeleteCtx = { previous: Expense[] };
 
 export function useCreateExpenseMutation() {
   const client = useQueryClient();
@@ -96,35 +96,4 @@ export function useCreateExpenseMutation() {
   });
 }
 
-export function useDeleteExpenseMutation() {
-  const client = useQueryClient();
-  return createMutation<string, Error, string, DeleteCtx>({
-    mutationFn: async (id) => {
-      const { error } = await getSupabase()
-        .from("expenses")
-        .delete()
-        .eq("id", id);
-      if (error) {
-        throw error;
-      }
-      return id;
-    },
-    onMutate: async (id) => {
-      await client.cancelQueries({ queryKey: qk.expenses() });
-      const previous = client.getQueryData<Expense[]>(qk.expenses()) ?? [];
-      client.setQueryData<Expense[]>(
-        qk.expenses(),
-        previous.filter((e) => e.id !== id),
-      );
-      return { previous };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx) {
-        client.setQueryData(qk.expenses(), ctx.previous);
-      }
-    },
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: qk.expenses() });
-    },
-  });
-}
+// Delete uses the centralized softDelete() helper in src/webview/lib/softDelete.ts.

@@ -2,7 +2,11 @@
     import { writable, derived as svelteDerived } from "svelte/store";
     import { toast } from "svelte-sonner";
     import { push, link } from "svelte-spa-router";
-    import { createQuery, createMutation, useQueryClient } from "@tanstack/svelte-query";
+    import {
+        createQuery,
+        createMutation,
+        useQueryClient,
+    } from "@tanstack/svelte-query";
     import {
         ArrowLeft,
         Mail,
@@ -302,11 +306,7 @@
                 <Card title="Profile">
                     {#if editing}
                         <div class="grid gap-3 sm:grid-cols-2">
-                            <Field
-                                class="sm:col-span-2"
-                                label="Name"
-                                required
-                            >
+                            <Field class="sm:col-span-2" label="Name" required>
                                 <Input bind:value={form.name} />
                             </Field>
                             <Field label="Company">

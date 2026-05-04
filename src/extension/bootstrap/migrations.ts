@@ -6,6 +6,8 @@ import schemaSql from "../../../migrations/0001_schema.sql";
 import revokeSql from "../../../migrations/0002_revoke.sql";
 import invoiceUniqueSql from "../../../migrations/0004_invoice_unique.sql";
 import storageSql from "../../../migrations/0005_storage.sql";
+import softDeleteSql from "../../../migrations/0006_soft_delete.sql";
+import profileTzFxSql from "../../../migrations/0007_profile_timezone_fx.sql";
 
 export type Migration = { name: string; sql: string };
 
@@ -14,4 +16,6 @@ export const MIGRATIONS: Migration[] = [
   { name: "0002_revoke.sql", sql: revokeSql },
   { name: "0004_invoice_unique.sql", sql: invoiceUniqueSql },
   { name: "0005_storage.sql", sql: storageSql },
+  { name: "0006_soft_delete.sql", sql: softDeleteSql },
+  { name: "0007_profile_timezone_fx.sql", sql: profileTzFxSql },
 ];

@@ -25,7 +25,9 @@
     const active = $derived(current.field === field);
 </script>
 
-<th class={cn("pb-2 font-medium", align === "right" && "text-right", className)}>
+<th
+    class={cn("pb-2 font-medium", align === "right" && "text-right", className)}
+>
     <button
         type="button"
         class={cn(

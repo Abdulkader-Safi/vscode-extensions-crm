@@ -33,6 +33,7 @@ async function fetchClients(): Promise<Client[]> {
     .from("clients")
     .select("*")
     .eq("user_id", auth.user.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
   if (error) {
     throw error;
@@ -72,7 +73,6 @@ export function useClientQuery(id: string) {
 
 type CreateCtx = { previous: Client[]; optimisticId: string };
 type UpdateCtx = { previousList: Client[]; previousOne: Client | undefined };
-type DeleteCtx = { previous: Client[] };
 
 export function useCreateClientMutation() {
   const client = useQueryClient();
@@ -176,35 +176,4 @@ export function useUpdateClientMutation() {
   });
 }
 
-export function useDeleteClientMutation() {
-  const client = useQueryClient();
-  return createMutation<string, Error, string, DeleteCtx>({
-    mutationFn: async (id) => {
-      const { error } = await getSupabase()
-        .from("clients")
-        .delete()
-        .eq("id", id);
-      if (error) {
-        throw error;
-      }
-      return id;
-    },
-    onMutate: async (id) => {
-      await client.cancelQueries({ queryKey: qk.clients() });
-      const previous = client.getQueryData<Client[]>(qk.clients()) ?? [];
-      client.setQueryData<Client[]>(
-        qk.clients(),
-        previous.filter((c) => c.id !== id),
-      );
-      return { previous };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx) {
-        client.setQueryData(qk.clients(), ctx.previous);
-      }
-    },
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: qk.clients() });
-    },
-  });
-}
+// Delete uses the centralized softDelete() helper in src/webview/lib/softDelete.ts.

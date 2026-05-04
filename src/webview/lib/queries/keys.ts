@@ -37,7 +37,10 @@ export const qk = {
 // Tables → query keys to invalidate when realtime fires for that table.
 // Composite views (dashboard, reports) read from multiple tables so they
 // invalidate on every relevant change.
-export const TABLE_INVALIDATIONS: Record<string, readonly (readonly unknown[])[]> = {
+export const TABLE_INVALIDATIONS: Record<
+  string,
+  readonly (readonly unknown[])[]
+> = {
   clients: [qk.clients(), qk.dashboard(), qk.reports()],
   projects: [qk.projects(), qk.dashboard(), qk.reports()],
   tasks: [qk.tasks(), qk.dashboard()],

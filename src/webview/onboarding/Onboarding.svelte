@@ -235,7 +235,7 @@
                         <code class="flex-1 truncate">{redirectUri}</code>
                         <button
                             class="rounded p-1 hover:bg-vscode-list-hover"
-                            on:click={copyRedirectUri}
+                            onclick={copyRedirectUri}
                             aria-label="Copy redirect URI"
                         >
                             <Copy class="h-3.5 w-3.5" />
@@ -336,7 +336,7 @@
                             ></pre>
                         <button
                             class="absolute right-2 top-2 rounded bg-vscode-button-secondary-bg p-1.5 text-vscode-button-secondary-fg hover:bg-vscode-button-secondary-hover"
-                            on:click={copySnippet}
+                            onclick={copySnippet}
                             aria-label="Copy snippet"
                         >
                             <Copy class="h-3.5 w-3.5" />
@@ -387,7 +387,7 @@
                             {:else}
                                 <div
                                     class="h-3.5 w-3.5 rounded-full border border-vscode-border"
-                                />
+                                ></div>
                             {/if}
                             <span class="font-mono text-xs">{m.name}</span>
                             <span class="text-[11px] text-vscode-description">

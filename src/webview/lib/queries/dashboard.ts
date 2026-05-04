@@ -29,16 +29,19 @@ async function fetchDashboard(): Promise<DashboardData> {
     supa
       .from("clients")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", userId),
+      .eq("user_id", userId)
+      .is("deleted_at", null),
     supa
       .from("projects")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
+      .is("deleted_at", null)
       .in("status", ["planning", "in_progress"]),
     supa
       .from("invoices")
       .select("status, total, paid_at, created_at")
-      .eq("user_id", userId),
+      .eq("user_id", userId)
+      .is("deleted_at", null),
   ]);
 
   const inv = (invoicesRes.data ?? []) as Array<{
@@ -65,18 +68,21 @@ async function fetchDashboard(): Promise<DashboardData> {
       .from("clients")
       .select("id,name,created_at")
       .eq("user_id", userId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(5),
     supa
       .from("invoices")
       .select("id,invoice_number,total,status,created_at")
       .eq("user_id", userId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(5),
     supa
       .from("tasks")
       .select("id,title,status,created_at")
       .eq("user_id", userId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(5),
   ]);

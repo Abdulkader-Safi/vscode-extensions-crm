@@ -36,28 +36,40 @@
     }
 
     function onKey(e: KeyboardEvent) {
-        if (e.key === "Escape") {
+        if (open && e.key === "Escape") {
+            close();
+        }
+    }
+
+    function onBackdropKey(e: KeyboardEvent) {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
             close();
         }
     }
 </script>
 
-<svelte:window on:keydown={onKey} />
+<svelte:window onkeydown={onKey} />
 
 {#if open}
     <div
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-        on:click={close}
-        role="presentation"
+        onclick={close}
+        onkeydown={onBackdropKey}
+        role="button"
+        tabindex="-1"
+        aria-label="Close dialog"
     >
         <div
             class={cn(
                 "relative w-full rounded-lg border border-vscode-card-border bg-vscode-card-bg text-vscode-card-fg shadow-lg",
                 sizes[size],
             )}
-            on:click|stopPropagation
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
+            tabindex="-1"
         >
             {#if title || description}
                 <div
@@ -75,7 +87,7 @@
                     </div>
                     <button
                         class="rounded p-1 hover:bg-vscode-list-hover"
-                        on:click={close}
+                        onclick={close}
                         aria-label="Close"
                     >
                         <X class="h-4 w-4" />

@@ -19,7 +19,10 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
-    import { confirm } from "../lib/confirm.svelte";
+    import { useQueryClient } from "@tanstack/svelte-query";
+    import { softDelete } from "../lib/softDelete";
+    import { commands } from "../lib/commands.svelte";
+    import { _ } from "../i18n";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
     import { compareBy, type SortDir } from "../lib/sort";
@@ -27,7 +30,6 @@
         useProjectsQuery,
         useCreateProjectMutation,
         useUpdateProjectMutation,
-        useDeleteProjectMutation,
         type Project,
     } from "../lib/queries/projects";
     import { useClientsQuery } from "../lib/queries/clients";
@@ -49,11 +51,11 @@
         budget: "0",
     };
 
+    const queryClient = useQueryClient();
     const projectsQuery = useProjectsQuery();
     const clientsQuery = useClientsQuery();
     const createMutation = useCreateProjectMutation();
     const updateMutation = useUpdateProjectMutation();
-    const deleteMutation = useDeleteProjectMutation();
 
     let open = $state(false);
     let editing = $state<Project | null>(null);
@@ -106,6 +108,16 @@
         form = { ...blank };
         open = true;
     }
+
+    $effect(() =>
+        commands.register({
+            id: "primary-new",
+            title: "New project",
+            group: "Create",
+            hint: "⌘N",
+            run: openNew,
+        }),
+    );
     function openEdit(p: Project) {
         editing = p;
         form = {
@@ -156,21 +168,7 @@
     }
 
     async function remove(id: string) {
-        if (
-            !(await confirm({
-                title: "Delete project?",
-                message: "Tasks linked to this project will be removed too.",
-                confirmLabel: "Delete",
-                destructive: true,
-            }))
-        ) {
-            return;
-        }
-        try {
-            await $deleteMutation.mutateAsync(id);
-        } catch (e) {
-            toast.error((e as Error).message);
-        }
+        await softDelete(queryClient, "projects", [id]);
     }
 
     function clientName(id: string | null) {
@@ -182,10 +180,14 @@
 </script>
 
 <div class="p-6">
-    <PageHeader title="Projects" description="Track all the work you're doing.">
+    <PageHeader
+        title={$_("page.projects.title")}
+        description={$_("page.projects.description")}
+    >
         {#snippet actions()}
             <Button variant="brand" onclick={openNew}>
-                <Plus class="h-4 w-4" /> New project
+                <Plus class="h-4 w-4" />
+                {$_("page.projects.newAction")}
             </Button>
         {/snippet}
     </PageHeader>
@@ -258,69 +260,77 @@
                 </p>
             </Card>
         {:else}
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {#each filteredSorted as p (p.id)}
-                {@const s = statusInfo(p.status)}
-                <Card class="group cursor-pointer" onclick={() => navigateToDetail(p)}>
-                    <div class="mb-2 flex items-start justify-between">
-                        <div class="min-w-0">
-                            <h3 class="truncate text-sm font-semibold">
-                                {p.name}
-                            </h3>
-                            <p class="mt-0.5 text-xs text-vscode-description">
-                                {clientName(p.client_id)}
-                            </p>
-                        </div>
-                        <div class="flex opacity-0 group-hover:opacity-100">
-                            <Button
-                                size="icon"
-                                variant="ghost"
-                                aria-label="Edit"
-                                onclick={(e: MouseEvent) => {
-                                    e.stopPropagation();
-                                    openEdit(p);
-                                }}
-                            >
-                                <Pencil class="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                                size="icon"
-                                variant="ghost"
-                                class="text-vscode-error"
-                                aria-label="Delete"
-                                onclick={(e: MouseEvent) => {
-                                    e.stopPropagation();
-                                    remove(p.id);
-                                }}
-                            >
-                                <Trash2 class="h-3.5 w-3.5" />
-                            </Button>
-                        </div>
-                    </div>
-                    <Badge tone={s.tone}>{s.label}</Badge>
-                    {#if p.description}
-                        <p
-                            class="mt-3 line-clamp-2 text-xs text-vscode-description"
-                        >
-                            {p.description}
-                        </p>
-                    {/if}
-                    <div
-                        class="mt-3 flex items-center justify-between text-xs text-vscode-description"
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {#each filteredSorted as p (p.id)}
+                    {@const s = statusInfo(p.status)}
+                    <Card
+                        class="group cursor-pointer"
+                        onclick={() => navigateToDetail(p)}
                     >
-                        {#if p.end_date}
-                            <span class="flex items-center gap-1">
-                                <Calendar class="h-3 w-3" />
-                                {p.end_date}
+                        <div class="mb-2 flex items-start justify-between">
+                            <div class="min-w-0">
+                                <h3 class="truncate text-sm font-semibold">
+                                    {p.name}
+                                </h3>
+                                <p
+                                    class="mt-0.5 text-xs text-vscode-description"
+                                >
+                                    {clientName(p.client_id)}
+                                </p>
+                            </div>
+                            <div class="flex opacity-0 group-hover:opacity-100">
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    aria-label="Edit"
+                                    onclick={(e: MouseEvent) => {
+                                        e.stopPropagation();
+                                        openEdit(p);
+                                    }}
+                                >
+                                    <Pencil class="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    class="text-vscode-error"
+                                    aria-label="Delete"
+                                    onclick={(e: MouseEvent) => {
+                                        e.stopPropagation();
+                                        remove(p.id);
+                                    }}
+                                >
+                                    <Trash2 class="h-3.5 w-3.5" />
+                                </Button>
+                            </div>
+                        </div>
+                        <Badge tone={s.tone}>{s.label}</Badge>
+                        {#if p.description}
+                            <p
+                                class="mt-3 line-clamp-2 text-xs text-vscode-description"
+                            >
+                                {p.description}
+                            </p>
+                        {/if}
+                        <div
+                            class="mt-3 flex items-center justify-between text-xs text-vscode-description"
+                        >
+                            {#if p.end_date}
+                                <span class="flex items-center gap-1">
+                                    <Calendar class="h-3 w-3" />
+                                    {p.end_date}
+                                </span>
+                            {:else}<span></span>{/if}
+                            <span class="font-medium text-vscode-fg">
+                                {formatCurrency(
+                                    Number(p.budget),
+                                    profile.currency,
+                                )}
                             </span>
-                        {:else}<span></span>{/if}
-                        <span class="font-medium text-vscode-fg">
-                            {formatCurrency(Number(p.budget), profile.currency)}
-                        </span>
-                    </div>
-                </Card>
-            {/each}
-        </div>
+                        </div>
+                    </Card>
+                {/each}
+            </div>
         {/if}
     {/if}
 </div>

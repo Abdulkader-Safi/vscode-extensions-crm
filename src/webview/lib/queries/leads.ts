@@ -33,6 +33,7 @@ async function fetchLeads(): Promise<Lead[]> {
     .from("leads")
     .select("*")
     .eq("user_id", auth.user.id)
+    .is("deleted_at", null)
     .order("position");
   if (error) {
     throw error;
@@ -47,7 +48,6 @@ export function useLeadsQuery() {
   });
 }
 
-type DeleteCtx = { previous: Lead[] };
 type ReorderCtx = { previous: Lead[] };
 
 export function useCreateLeadMutation() {
@@ -73,35 +73,7 @@ export function useCreateLeadMutation() {
   });
 }
 
-export function useDeleteLeadMutation() {
-  const client = useQueryClient();
-  return createMutation<string, Error, string, DeleteCtx>({
-    mutationFn: async (id) => {
-      const { error } = await getSupabase().from("leads").delete().eq("id", id);
-      if (error) {
-        throw error;
-      }
-      return id;
-    },
-    onMutate: async (id) => {
-      await client.cancelQueries({ queryKey: qk.leads() });
-      const previous = client.getQueryData<Lead[]>(qk.leads()) ?? [];
-      client.setQueryData<Lead[]>(
-        qk.leads(),
-        previous.filter((l) => l.id !== id),
-      );
-      return { previous };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx) {
-        client.setQueryData(qk.leads(), ctx.previous);
-      }
-    },
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: qk.leads() });
-    },
-  });
-}
+// Delete uses the centralized softDelete() helper in src/webview/lib/softDelete.ts.
 
 // Convert lead → insert client + flip lead.stage to "won".
 // Two-step (no atomic Postgres function) — failure mode: client created

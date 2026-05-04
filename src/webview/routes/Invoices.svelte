@@ -1,7 +1,8 @@
 <script lang="ts">
     import { toast } from "svelte-sonner";
-    import { Plus, Trash2, Pencil, FileDown, Check } from "lucide-svelte";
-    import jsPDF from "jspdf";
+    import { SvelteSet } from "svelte/reactivity";
+    import { useQueryClient } from "@tanstack/svelte-query";
+    import { Plus, Trash2, Pencil, FileDown, Eye, Check } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -13,16 +14,26 @@
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
     import SortableHeader from "../lib/components/ui/SortableHeader.svelte";
+    import BulkActionBar from "../lib/components/ui/BulkActionBar.svelte";
+    import SelectableHeader from "../lib/components/ui/SelectableHeader.svelte";
+    import InvoicePreviewDialog from "../lib/components/ui/InvoicePreviewDialog.svelte";
     import { confirm } from "../lib/confirm.svelte";
+    import { softDelete } from "../lib/softDelete";
+    import { commands } from "../lib/commands.svelte";
+    import { _ } from "../i18n";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
     import { compareBy, type SortDir } from "../lib/sort";
     import { inDateRange } from "../lib/dateFilter";
     import {
+        loadInvoicePreview,
+        renderInvoicePdf,
+        type InvoicePreview,
+    } from "../lib/invoicePreview";
+    import {
         useInvoicesQuery,
         useSaveInvoiceMutation,
         useUpdateInvoiceMutation,
-        useDeleteInvoiceMutation,
         loadInvoiceItems,
         type Invoice,
         type InvoiceItem as Item,
@@ -48,12 +59,16 @@
         };
     }
 
+    const queryClient = useQueryClient();
     const invoicesQuery = useInvoicesQuery();
     const clientsQuery = useClientsQuery();
     const projectsQuery = useProjectsQuery();
     const saveMutation = useSaveInvoiceMutation();
     const updateMutation = useUpdateInvoiceMutation();
-    const deleteMutation = useDeleteInvoiceMutation();
+
+    let selected = $state(new SvelteSet<string>());
+    let previewOpen = $state(false);
+    let preview = $state<InvoicePreview | null>(null);
 
     let open = $state(false);
     let editing = $state<Invoice | null>(null);
@@ -133,6 +148,16 @@
         );
         return { subtotal, tax_amount, total };
     });
+
+    $effect(() =>
+        commands.register({
+            id: "primary-new",
+            title: "New invoice",
+            group: "Create",
+            hint: "⌘N",
+            run: openNew,
+        }),
+    );
 
     function openNew() {
         editing = null;
@@ -243,20 +268,37 @@
     }
 
     async function remove(id: string) {
+        await softDelete(queryClient, "invoices", [id]);
+    }
+
+    async function bulkRemove() {
+        if (selected.size === 0) {
+            return;
+        }
+        const ids = Array.from(selected);
         if (
             !(await confirm({
-                title: "Delete invoice?",
-                message: "Line items will be removed with it.",
+                title:
+                    ids.length === 1
+                        ? "Delete invoice?"
+                        : `Delete ${ids.length} invoices?`,
+                message:
+                    "Soft-deleted — restore from Trash within 5 seconds via Undo, or permanently from the Trash view.",
                 confirmLabel: "Delete",
                 destructive: true,
             }))
         ) {
             return;
         }
-        try {
-            await $deleteMutation.mutateAsync(id);
-        } catch (e) {
-            toast.error((e as Error).message);
+        selected.clear();
+        await softDelete(queryClient, "invoices", ids);
+    }
+
+    function toggleOne(id: string) {
+        if (selected.has(id)) {
+            selected.delete(id);
+        } else {
+            selected.add(id);
         }
     }
 
@@ -272,105 +314,50 @@
         }
     }
 
+    async function openPreview(inv: Invoice) {
+        try {
+            preview = await loadInvoicePreview(inv, clients, profile.profile);
+            previewOpen = true;
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
+
     async function exportPdf(inv: Invoice) {
-        const itemRows = await loadInvoiceItems(inv.id);
-        const client = clients.find((c) => c.id === inv.client_id);
-        const doc = new jsPDF();
-        const brand = profile.profile?.brand_color || "#7c5cff";
-        const r = parseInt(brand.slice(1, 3), 16);
-        const g = parseInt(brand.slice(3, 5), 16);
-        const b = parseInt(brand.slice(5, 7), 16);
-        doc.setFillColor(r, g, b);
-        doc.rect(0, 0, 210, 28, "F");
-        doc.setTextColor(255);
-        doc.setFontSize(20);
-        doc.text(
-            profile.profile?.company_name ||
-                profile.profile?.display_name ||
-                "Invoice",
-            14,
-            18,
-        );
-        doc.setTextColor(0);
-        doc.setFontSize(11);
-        doc.text(`Invoice ${inv.invoice_number}`, 14, 42);
-        doc.text(`Issued: ${inv.issue_date}`, 14, 49);
-        if (inv.due_date) {
-            doc.text(`Due: ${inv.due_date}`, 14, 56);
+        try {
+            const p = await loadInvoicePreview(inv, clients, profile.profile);
+            renderInvoicePdf(p).save(`${inv.invoice_number}.pdf`);
+        } catch (e) {
+            toast.error((e as Error).message);
         }
-        if (client) {
-            doc.text("Bill to:", 130, 42);
-            doc.text(client.name, 130, 49);
-            if (client.company) {
-                doc.text(client.company, 130, 56);
-            }
-            if (client.email) {
-                doc.text(client.email, 130, 63);
-            }
+    }
+
+    function downloadFromPreview() {
+        if (!preview) {
+            return;
         }
-        let y = 80;
-        doc.setFillColor(245, 245, 245);
-        doc.rect(14, y - 5, 182, 8, "F");
-        doc.setFontSize(10);
-        doc.text("Description", 16, y);
-        doc.text("Qty", 130, y);
-        doc.text("Price", 150, y);
-        doc.text("Total", 178, y);
-        y += 8;
-        const rows = itemRows;
-        for (const it of rows) {
-            doc.text(String(it.description).slice(0, 70), 16, y);
-            doc.text(String(it.quantity), 130, y);
-            doc.text(
-                formatCurrency(Number(it.unit_price), inv.currency),
-                150,
-                y,
-            );
-            doc.text(formatCurrency(Number(it.total), inv.currency), 178, y);
-            y += 7;
+        renderInvoicePdf(preview).save(`${preview.invoice.invoice_number}.pdf`);
+    }
+
+    function editFromPreview() {
+        if (!preview) {
+            return;
         }
-        y += 10;
-        doc.text(
-            `Subtotal: ${formatCurrency(Number(inv.subtotal), inv.currency)}`,
-            140,
-            y,
-        );
-        y += 6;
-        doc.text(
-            `Tax: ${formatCurrency(Number(inv.tax_amount), inv.currency)}`,
-            140,
-            y,
-        );
-        y += 6;
-        doc.text(
-            `Discount: ${formatCurrency(Number(inv.discount), inv.currency)}`,
-            140,
-            y,
-        );
-        y += 6;
-        doc.setFontSize(13);
-        doc.text(
-            `Total: ${formatCurrency(Number(inv.total), inv.currency)}`,
-            140,
-            y,
-        );
-        if (inv.notes) {
-            y += 14;
-            doc.setFontSize(10);
-            doc.text(`Notes: ${inv.notes}`, 14, y);
-        }
-        doc.save(`${inv.invoice_number}.pdf`);
+        const inv = preview.invoice;
+        previewOpen = false;
+        openEdit(inv);
     }
 </script>
 
 <div class="p-6">
     <PageHeader
-        title="Invoices"
-        description="Send branded invoices and track payments."
+        title={$_("page.invoices.title")}
+        description={$_("page.invoices.description")}
     >
         {#snippet actions()}
             <Button variant="brand" onclick={openNew}>
-                <Plus class="h-4 w-4" /> New invoice
+                <Plus class="h-4 w-4" />
+                {$_("page.invoices.newAction")}
             </Button>
         {/snippet}
     </PageHeader>
@@ -424,9 +411,16 @@
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead>
-                        <tr
-                            class="border-b border-vscode-border text-left"
-                        >
+                        <tr class="border-b border-vscode-border text-left">
+                            <th class="w-6 pb-2">
+                                <SelectableHeader
+                                    ids={filteredSorted.map((i) => i.id)}
+                                    {selected}
+                                    onchange={(next) => {
+                                        selected = new SvelteSet(next);
+                                    }}
+                                />
+                            </th>
                             <SortableHeader
                                 field="invoice_number"
                                 current={sort}
@@ -466,7 +460,7 @@
                         {#if filteredSorted.length === 0}
                             <tr>
                                 <td
-                                    colspan="6"
+                                    colspan="7"
                                     class="py-6 text-center text-xs text-vscode-description"
                                 >
                                     No invoices match these filters.
@@ -477,6 +471,14 @@
                             <tr
                                 class="group border-b border-vscode-border last:border-0"
                             >
+                                <td class="w-6 py-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={selected.has(inv.id)}
+                                        aria-label="Select {inv.invoice_number}"
+                                        onchange={() => toggleOne(inv.id)}
+                                    />
+                                </td>
                                 <td class="py-2 font-medium"
                                     >{inv.invoice_number}</td
                                 >
@@ -519,6 +521,15 @@
                                         <Button
                                             size="icon"
                                             variant="ghost"
+                                            aria-label="Preview"
+                                            title="Preview"
+                                            onclick={() => openPreview(inv)}
+                                        >
+                                            <Eye class="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
                                             aria-label="Download PDF"
                                             title="Download PDF"
                                             onclick={() => exportPdf(inv)}
@@ -552,6 +563,26 @@
         </Card>
     {/if}
 </div>
+
+<BulkActionBar
+    count={selected.size}
+    label={selected.size === 1 ? "invoice selected" : "invoices selected"}
+    onclear={() => selected.clear()}
+>
+    {#snippet actions()}
+        <Button variant="destructive" size="sm" onclick={bulkRemove}>
+            <Trash2 class="h-3.5 w-3.5" /> Delete
+        </Button>
+    {/snippet}
+</BulkActionBar>
+
+<InvoicePreviewDialog
+    bind:open={previewOpen}
+    {preview}
+    onClose={() => (previewOpen = false)}
+    onDownload={downloadFromPreview}
+    onEdit={editFromPreview}
+/>
 
 <Dialog bind:open title={editing ? "Edit invoice" : "New invoice"} size="xl">
     <div class="grid gap-3 sm:grid-cols-3">

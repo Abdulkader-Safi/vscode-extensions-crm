@@ -10,13 +10,15 @@
     import Textarea from "../lib/components/ui/Textarea.svelte";
     import Field from "../lib/components/ui/Field.svelte";
     import Dialog from "../lib/components/ui/Dialog.svelte";
-    import { confirm } from "../lib/confirm.svelte";
+    import { useQueryClient } from "@tanstack/svelte-query";
+    import { softDelete } from "../lib/softDelete";
+    import { commands } from "../lib/commands.svelte";
+    import { _ } from "../i18n";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
     import {
         useLeadsQuery,
         useCreateLeadMutation,
-        useDeleteLeadMutation,
         useConvertLeadMutation,
         useReorderLeadsMutation,
         type Lead,
@@ -40,14 +42,26 @@
         notes: "",
     };
 
+    const queryClient = useQueryClient();
     const leadsQuery = useLeadsQuery();
     const createMutation = useCreateLeadMutation();
-    const deleteMutation = useDeleteLeadMutation();
     const convertMutation = useConvertLeadMutation();
     const reorderMutation = useReorderLeadsMutation();
 
     let open = $state(false);
     let form = $state({ ...blank });
+
+    $effect(() =>
+        commands.register({
+            id: "primary-new",
+            title: "New lead",
+            group: "Create",
+            hint: "⌘N",
+            run: () => {
+                open = true;
+            },
+        }),
+    );
     // Local optimistic dnd state — synced from query data, mutated by drag.
     let columns = $state<Record<string, Lead[]>>({});
 
@@ -93,20 +107,7 @@
     }
 
     async function remove(id: string) {
-        if (
-            !(await confirm({
-                title: "Delete lead?",
-                confirmLabel: "Delete",
-                destructive: true,
-            }))
-        ) {
-            return;
-        }
-        try {
-            await $deleteMutation.mutateAsync(id);
-        } catch (e) {
-            toast.error((e as Error).message);
-        }
+        await softDelete(queryClient, "leads", [id]);
     }
 
     async function convert(lead: Lead) {
@@ -145,12 +146,13 @@
 
 <div class="p-6">
     <PageHeader
-        title="Leads"
-        description="Track opportunities through your pipeline."
+        title={$_("page.leads.title")}
+        description={$_("page.leads.description")}
     >
         {#snippet actions()}
             <Button variant="brand" onclick={() => (open = true)}>
-                <Plus class="h-4 w-4" /> New lead
+                <Plus class="h-4 w-4" />
+                {$_("page.leads.newAction")}
             </Button>
         {/snippet}
     </PageHeader>
@@ -178,8 +180,8 @@
                         flipDurationMs: 150,
                         type: "lead",
                     }}
-                    on:consider={(e) => onConsider(stage.id, e)}
-                    on:finalize={(e) => onFinalize(stage.id, e)}
+                    onconsider={(e) => onConsider(stage.id, e)}
+                    onfinalize={(e) => onFinalize(stage.id, e)}
                 >
                     {#each columns[stage.id] ?? [] as lead (lead.id)}
                         <div
@@ -222,14 +224,14 @@
                                     class="rounded p-1 hover:bg-vscode-list-hover"
                                     aria-label="Convert to client"
                                     title="Convert to client"
-                                    on:click={() => convert(lead)}
+                                    onclick={() => convert(lead)}
                                 >
                                     <ArrowRightLeft class="h-3 w-3" />
                                 </button>
                                 <button
                                     class="rounded p-1 text-vscode-error hover:bg-vscode-list-hover"
                                     aria-label="Delete"
-                                    on:click={() => remove(lead.id)}
+                                    onclick={() => remove(lead.id)}
                                 >
                                     <Trash2 class="h-3 w-3" />
                                 </button>

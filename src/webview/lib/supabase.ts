@@ -21,7 +21,9 @@ const proxyStorage = {
 let client: SupabaseClient | null = null;
 
 export function initSupabase(url: string, anonKey: string): SupabaseClient {
-  if (client) return client;
+  if (client) {
+    return client;
+  }
   client = createClient(url, anonKey, {
     auth: {
       storage: proxyStorage as unknown as Storage,

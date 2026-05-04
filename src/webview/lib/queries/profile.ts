@@ -18,6 +18,8 @@ export type Profile = {
   currency: string;
   tax_rate: number;
   language: string;
+  timezone: string;
+  fx_rates: Record<string, number>;
 };
 
 async function fetchProfile(): Promise<Profile | null> {

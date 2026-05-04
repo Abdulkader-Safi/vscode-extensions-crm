@@ -109,6 +109,7 @@
     "jspdf": "^2.5.1",
     "lucide-svelte": "^0.460.0",
     "svelte-dnd-action": "^0.9.50",
+    "svelte-i18n": "^4.0.1",
     "svelte-sonner": "^0.3.28",
     "svelte-spa-router": "^5.0.1",
     "tailwind-merge": "^2.5.0"

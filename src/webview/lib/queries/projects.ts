@@ -30,6 +30,7 @@ async function fetchProjects(): Promise<Project[]> {
     .from("projects")
     .select("*")
     .eq("user_id", auth.user.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
   if (error) {
     throw error;
@@ -69,11 +70,15 @@ export function useProjectQuery(id: string) {
 
 type CreateCtx = { previous: Project[]; optimisticId: string };
 type UpdateCtx = { previousList: Project[]; previousOne: Project | undefined };
-type DeleteCtx = { previous: Project[] };
 
 export function useCreateProjectMutation() {
   const client = useQueryClient();
-  return createMutation<Project, Error, Omit<ProjectInsert, "user_id">, CreateCtx>({
+  return createMutation<
+    Project,
+    Error,
+    Omit<ProjectInsert, "user_id">,
+    CreateCtx
+  >({
     mutationFn: async (payload) => {
       if (!auth.user) {
         throw new Error("Not authenticated");
@@ -168,35 +173,4 @@ export function useUpdateProjectMutation() {
   });
 }
 
-export function useDeleteProjectMutation() {
-  const client = useQueryClient();
-  return createMutation<string, Error, string, DeleteCtx>({
-    mutationFn: async (id) => {
-      const { error } = await getSupabase()
-        .from("projects")
-        .delete()
-        .eq("id", id);
-      if (error) {
-        throw error;
-      }
-      return id;
-    },
-    onMutate: async (id) => {
-      await client.cancelQueries({ queryKey: qk.projects() });
-      const previous = client.getQueryData<Project[]>(qk.projects()) ?? [];
-      client.setQueryData<Project[]>(
-        qk.projects(),
-        previous.filter((p) => p.id !== id),
-      );
-      return { previous };
-    },
-    onError: (_err, _id, ctx) => {
-      if (ctx) {
-        client.setQueryData(qk.projects(), ctx.previous);
-      }
-    },
-    onSettled: () => {
-      client.invalidateQueries({ queryKey: qk.projects() });
-    },
-  });
-}
+// Delete uses the centralized softDelete() helper in src/webview/lib/softDelete.ts.

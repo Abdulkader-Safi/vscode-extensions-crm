@@ -11,14 +11,13 @@
     import { auth } from "./lib/stores/auth.svelte";
     import { profile } from "./lib/stores/profile.svelte";
     import { startRealtime } from "./lib/queries/realtime";
-    import {
-        connection,
-        subscribeConnection,
-    } from "./lib/connection.svelte";
+    import { connection, subscribeConnection } from "./lib/connection.svelte";
+    import { locale, isRtl } from "./i18n";
 
     import AppLayout from "./lib/components/AppLayout.svelte";
     import Toaster from "./lib/components/ui/Toaster.svelte";
     import ConfirmDialog from "./lib/components/ui/ConfirmDialog.svelte";
+    import CommandPalette from "./lib/components/CommandPalette.svelte";
     import Spinner from "./lib/components/ui/Spinner.svelte";
     import ErrorFallback from "./lib/components/ui/ErrorFallback.svelte";
 
@@ -32,10 +31,12 @@
     import Projects from "./routes/Projects.svelte";
     import ProjectDetail from "./routes/ProjectDetail.svelte";
     import Tasks from "./routes/Tasks.svelte";
+    import TasksKanban from "./routes/TasksKanban.svelte";
     import Invoices from "./routes/Invoices.svelte";
     import Expenses from "./routes/Expenses.svelte";
     import Reports from "./routes/Reports.svelte";
     import Settings from "./routes/Settings.svelte";
+    import Trash from "./routes/Trash.svelte";
     import NotFound from "./routes/NotFound.svelte";
 
     onlineManager.setOnline(connection.status === "online");
@@ -66,10 +67,12 @@
         "/projects": Projects,
         "/projects/:id": ProjectDetail,
         "/tasks": Tasks,
+        "/tasks/kanban": TasksKanban,
         "/invoices": Invoices,
         "/expenses": Expenses,
         "/reports": Reports,
         "/settings": Settings,
+        "/trash": Trash,
         "*": NotFound,
     };
 
@@ -88,6 +91,15 @@
         if (config.isReadyForApp && auth.loading === false && auth.user) {
             profile.load();
         }
+    });
+
+    // Keep $locale aligned with the user's saved language. Set the document
+    // direction so all RTL locales flip without per-component code.
+    $effect(() => {
+        const lang = profile.profile?.language ?? "en";
+        locale.set(lang);
+        document.documentElement.lang = lang;
+        document.documentElement.dir = isRtl(lang) ? "rtl" : "ltr";
     });
 
     // Multi-tab sync: subscribe to postgres_changes once we're authenticated.
@@ -136,4 +148,5 @@
     {/if}
     <Toaster />
     <ConfirmDialog />
+    <CommandPalette />
 </QueryClientProvider>

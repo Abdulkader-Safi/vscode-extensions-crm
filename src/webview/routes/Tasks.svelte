@@ -9,7 +9,9 @@
         Clock,
         ArrowDown,
         ArrowUp,
+        Columns3,
     } from "lucide-svelte";
+    import { link } from "svelte-spa-router";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -20,14 +22,16 @@
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import Badge from "../lib/components/ui/Badge.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
-    import { confirm } from "../lib/confirm.svelte";
+    import { useQueryClient } from "@tanstack/svelte-query";
+    import { softDelete } from "../lib/softDelete";
+    import { commands } from "../lib/commands.svelte";
+    import { _ } from "../i18n";
     import { formatMinutes } from "../lib/utils";
     import { compareBy, type SortDir } from "../lib/sort";
     import {
         useTasksQuery,
         useCreateTaskMutation,
         useUpdateTaskMutation,
-        useDeleteTaskMutation,
         useStopTimerMutation,
         type Task,
     } from "../lib/queries/tasks";
@@ -55,16 +59,28 @@
         project_id: "none",
     };
 
+    const queryClient = useQueryClient();
     const tasksQuery = useTasksQuery();
     const projectsQuery = useProjectsQuery();
     const createMutation = useCreateTaskMutation();
     const updateMutation = useUpdateTaskMutation();
-    const deleteMutation = useDeleteTaskMutation();
     const stopTimerMutation = useStopTimerMutation();
 
     let open = $state(false);
     let form = $state({ ...blank });
     let running = $state<{ taskId: string; startedAt: number } | null>(null);
+
+    $effect(() =>
+        commands.register({
+            id: "primary-new",
+            title: "New task",
+            group: "Create",
+            hint: "⌘N",
+            run: () => {
+                open = true;
+            },
+        }),
+    );
     let now = $state(Date.now());
     let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -97,9 +113,8 @@
         const sortKey: (t: Task) => unknown =
             sort.field === "priority"
                 ? (t) =>
-                      PRIORITY_RANK[
-                          t.priority as keyof typeof PRIORITY_RANK
-                      ] ?? -1
+                      PRIORITY_RANK[t.priority as keyof typeof PRIORITY_RANK] ??
+                      -1
                 : (t) => t[sort.field];
         return [...filtered].sort(compareBy(sortKey, sort.direction));
     });
@@ -156,9 +171,7 @@
                 patch: {
                     status: newStatus,
                     completed_at:
-                        newStatus === "done"
-                            ? new Date().toISOString()
-                            : null,
+                        newStatus === "done" ? new Date().toISOString() : null,
                 },
             });
         } catch (e) {
@@ -167,20 +180,7 @@
     }
 
     async function remove(id: string) {
-        if (
-            !(await confirm({
-                title: "Delete task?",
-                confirmLabel: "Delete",
-                destructive: true,
-            }))
-        ) {
-            return;
-        }
-        try {
-            await $deleteMutation.mutateAsync(id);
-        } catch (e) {
-            toast.error((e as Error).message);
-        }
+        await softDelete(queryClient, "tasks", [id]);
     }
 
     function startTimer(t: Task) {
@@ -223,10 +223,20 @@
 </script>
 
 <div class="p-6">
-    <PageHeader title="Tasks" description="Stay on top of every deliverable.">
+    <PageHeader
+        title={$_("page.tasks.title")}
+        description={$_("page.tasks.description")}
+    >
         {#snippet actions()}
+            <a use:link href="/tasks/kanban">
+                <Button variant="ghost" size="sm">
+                    <Columns3 class="h-3.5 w-3.5" />
+                    {$_("page.tasks.boardLink")}
+                </Button>
+            </a>
             <Button variant="brand" onclick={() => (open = true)}>
-                <Plus class="h-4 w-4" /> New task
+                <Plus class="h-4 w-4" />
+                {$_("page.tasks.newAction")}
             </Button>
         {/snippet}
     </PageHeader>
@@ -315,7 +325,7 @@
                             type="checkbox"
                             class="h-4 w-4"
                             checked={t.status === "done"}
-                            on:change={() => toggleDone(t)}
+                            onchange={() => toggleDone(t)}
                         />
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2">

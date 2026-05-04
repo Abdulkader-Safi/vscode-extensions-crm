@@ -274,11 +274,7 @@
                 <Card title="Project info">
                     {#if editing}
                         <div class="grid gap-3 sm:grid-cols-2">
-                            <Field
-                                class="sm:col-span-2"
-                                label="Name"
-                                required
-                            >
+                            <Field class="sm:col-span-2" label="Name" required>
                                 <Input bind:value={form.name} />
                             </Field>
                             <Field label="Client">
@@ -292,7 +288,8 @@
                             <Field label="Status">
                                 <Select bind:value={form.status}>
                                     {#each STATUSES as st (st.id)}
-                                        <option value={st.id}>{st.label}</option>
+                                        <option value={st.id}>{st.label}</option
+                                        >
                                     {/each}
                                 </Select>
                             </Field>
@@ -303,10 +300,7 @@
                                 />
                             </Field>
                             <Field label="End date">
-                                <Input
-                                    type="date"
-                                    bind:value={form.end_date}
-                                />
+                                <Input type="date" bind:value={form.end_date} />
                             </Field>
                             <Field class="sm:col-span-2" label="Budget">
                                 <Input
@@ -315,10 +309,7 @@
                                     bind:value={form.budget}
                                 />
                             </Field>
-                            <Field
-                                class="sm:col-span-2"
-                                label="Description"
-                            >
+                            <Field class="sm:col-span-2" label="Description">
                                 <Textarea
                                     bind:value={form.description}
                                     rows={3}

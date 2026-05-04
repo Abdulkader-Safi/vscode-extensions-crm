@@ -9,11 +9,21 @@
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
     import { useReportsQuery } from "../lib/queries/reports";
+    import { convertToBase } from "../lib/fx";
+    import { _ } from "../i18n";
 
     const reportsQuery = useReportsQuery();
+    // Helper closures that bake in the user's base currency + saved FX rates.
+    // All monetary aggregation goes through these so mixed-currency totals
+    // come out in the profile currency. Currencies without a saved rate fall
+    // through at face value (footnote calls this out).
+    const inv = (v: number, c: string) =>
+        convertToBase(v, c, profile.currency, profile.fxRates);
     const invoices = $derived($reportsQuery.data?.invoices ?? []);
     const expenses = $derived($reportsQuery.data?.expenses ?? []);
     const clients = $derived($reportsQuery.data?.clients ?? []);
+    const projects = $derived($reportsQuery.data?.projects ?? []);
+    const timeEntries = $derived($reportsQuery.data?.timeEntries ?? []);
 
     const monthly = $derived.by(() => {
         const months = Array.from({ length: 6 }, (_, i) => {
@@ -29,13 +39,13 @@
             }
             const k = i.paid_at.slice(0, 7);
             if (m[k]) {
-                m[k].revenue += Number(i.total);
+                m[k].revenue += inv(Number(i.total), i.currency);
             }
         }
         for (const e of expenses) {
             const k = e.expense_date.slice(0, 7);
             if (m[k]) {
-                m[k].expenses += Number(e.amount);
+                m[k].expenses += inv(Number(e.amount), e.currency);
             }
         }
         return months.map((k) => ({
@@ -51,7 +61,8 @@
             if (i.status !== "paid" || !i.client_id) {
                 continue;
             }
-            t[i.client_id] = (t[i.client_id] ?? 0) + Number(i.total);
+            t[i.client_id] =
+                (t[i.client_id] ?? 0) + inv(Number(i.total), i.currency);
         }
         return Object.entries(t)
             .map(([id, total]) => ({
@@ -65,12 +76,153 @@
     const totalRev = $derived(
         invoices
             .filter((i) => i.status === "paid")
-            .reduce((s, i) => s + Number(i.total), 0),
+            .reduce((s, i) => s + inv(Number(i.total), i.currency), 0),
     );
     const totalExp = $derived(
-        expenses.reduce((s, e) => s + Number(e.amount), 0),
+        expenses.reduce((s, e) => s + inv(Number(e.amount), e.currency), 0),
     );
     const profit = $derived(totalRev - totalExp);
+
+    // DSO (days sales outstanding): mean (paid_at - issue_date) over invoices
+    // paid in the trailing 90 days. Surfaces collection speed; high DSO = slow
+    // payers. Invoices without paid_at are excluded; if no qualifying rows,
+    // we render "—" so the metric isn't misleading.
+    const dso = $derived.by(() => {
+        const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+        const samples: number[] = [];
+        for (const i of invoices) {
+            if (i.status !== "paid" || !i.paid_at) {
+                continue;
+            }
+            const paid = new Date(i.paid_at).getTime();
+            if (paid < cutoff) {
+                continue;
+            }
+            const issued = new Date(i.issue_date).getTime();
+            const days = (paid - issued) / (24 * 60 * 60 * 1000);
+            if (days >= 0) {
+                samples.push(days);
+            }
+        }
+        if (samples.length === 0) {
+            return null;
+        }
+        const mean = samples.reduce((s, d) => s + d, 0) / samples.length;
+        return Math.round(mean);
+    });
+
+    // Per-project ROI: paid revenue minus expenses tagged to that project.
+    // Hourly rate: paid revenue divided by total hours logged on the project.
+    // Hours come from `time_entries.duration_minutes`; we don't filter by a
+    // billable flag (no such column today — every entry counts) and unpaid
+    // invoices are excluded so the rate reflects collected, not invoiced, work.
+    type ProjectRow = {
+        id: string;
+        name: string;
+        revenue: number;
+        expense: number;
+        hours: number;
+        roi: number;
+        rate: number | null;
+    };
+
+    const perProject = $derived.by<ProjectRow[]>(() => {
+        const byId = new Map<string, ProjectRow>();
+        for (const p of projects) {
+            byId.set(p.id, {
+                id: p.id,
+                name: p.name,
+                revenue: 0,
+                expense: 0,
+                hours: 0,
+                roi: 0,
+                rate: null,
+            });
+        }
+        for (const i of invoices) {
+            if (i.status !== "paid" || !i.project_id) {
+                continue;
+            }
+            const row = byId.get(i.project_id);
+            if (row) {
+                row.revenue += inv(Number(i.total), i.currency);
+            }
+        }
+        for (const e of expenses) {
+            if (!e.project_id) {
+                continue;
+            }
+            const row = byId.get(e.project_id);
+            if (row) {
+                row.expense += inv(Number(e.amount), e.currency);
+            }
+        }
+        for (const t of timeEntries) {
+            if (!t.project_id || !t.duration_minutes) {
+                continue;
+            }
+            const row = byId.get(t.project_id);
+            if (row) {
+                row.hours += Number(t.duration_minutes) / 60;
+            }
+        }
+        for (const row of byId.values()) {
+            row.roi = row.revenue - row.expense;
+            row.rate = row.hours > 0 ? row.revenue / row.hours : null;
+        }
+        return Array.from(byId.values()).sort((a, b) => b.roi - a.roi);
+    });
+
+    const topRoi = $derived(
+        perProject.filter((p) => p.revenue || p.expense).slice(0, 6),
+    );
+
+    // Cash-flow projection: outstanding invoices summed by their `due_date`
+    // month for the next 6 months, plus a "projected" series that fills any
+    // future month with the trailing-3-month paid average. Once recurring
+    // invoices ship (Batch 7) the projection should subtract recurring
+    // template months; for now it's a smoothed-baseline forecast.
+    const cashFlow = $derived.by(() => {
+        const months = Array.from({ length: 6 }, (_, idx) => {
+            const d = new Date();
+            d.setDate(1);
+            d.setMonth(d.getMonth() + idx);
+            return d.toISOString().slice(0, 7);
+        });
+        const outstanding: Record<string, number> = {};
+        months.forEach((k) => (outstanding[k] = 0));
+        for (const i of invoices) {
+            if (i.status === "paid" || !i.due_date) {
+                continue;
+            }
+            const k = i.due_date.slice(0, 7);
+            if (k in outstanding) {
+                outstanding[k] += inv(Number(i.total), i.currency);
+            }
+        }
+
+        // Trailing-3-month paid average for forward smoothing.
+        const trailing: Record<string, number> = {};
+        for (const i of invoices) {
+            if (i.status !== "paid" || !i.paid_at) {
+                continue;
+            }
+            const k = i.paid_at.slice(0, 7);
+            trailing[k] = (trailing[k] ?? 0) + inv(Number(i.total), i.currency);
+        }
+        const trailingKeys = Object.keys(trailing).sort().slice(-3);
+        const smoothed =
+            trailingKeys.length > 0
+                ? trailingKeys.reduce((s, k) => s + trailing[k], 0) /
+                  trailingKeys.length
+                : 0;
+
+        return months.map((k) => ({
+            label: k.slice(5) + "/" + k.slice(2, 4),
+            outstanding: outstanding[k],
+            projected: smoothed,
+        }));
+    });
 
     const lineConfig = $derived({
         type: "line" as const,
@@ -128,6 +280,63 @@
         },
     });
 
+    const cashFlowConfig = $derived({
+        type: "bar" as const,
+        data: {
+            labels: cashFlow.map((c) => c.label),
+            datasets: [
+                {
+                    label: "Outstanding (due)",
+                    data: cashFlow.map((c) => c.outstanding),
+                    backgroundColor: "#7c5cff",
+                    borderRadius: 6,
+                },
+                {
+                    label: "Projected (3-mo avg paid)",
+                    data: cashFlow.map((c) => c.projected),
+                    backgroundColor: "rgba(16,185,129,.5)",
+                    borderRadius: 6,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: "currentColor" } } },
+            scales: {
+                x: { stacked: false, ticks: { color: "currentColor" } },
+                y: { ticks: { color: "currentColor" } },
+            },
+        },
+    });
+
+    const roiConfig = $derived({
+        type: "bar" as const,
+        data: {
+            labels: topRoi.map((p) => p.name),
+            datasets: [
+                {
+                    label: "ROI",
+                    data: topRoi.map((p) => p.roi),
+                    backgroundColor: topRoi.map((p) =>
+                        p.roi >= 0 ? "#10b981" : "#ef4444",
+                    ),
+                    borderRadius: 6,
+                },
+            ],
+        },
+        options: {
+            indexAxis: "y" as const,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: "currentColor" } },
+                y: { ticks: { color: "currentColor" } },
+            },
+        },
+    });
+
     function exportCsv() {
         const rows: string[][] = [["Type", "Date", "Description", "Amount"]];
         for (const i of invoices) {
@@ -162,15 +371,19 @@
 </script>
 
 <div class="p-6">
-    <PageHeader title="Reports" description="See where your business stands.">
+    <PageHeader
+        title={$_("page.reports.title")}
+        description={$_("page.reports.description")}
+    >
         {#snippet actions()}
             <Button variant="outline" onclick={exportCsv}>
-                <Download class="h-4 w-4" /> Export CSV
+                <Download class="h-4 w-4" />
+                {$_("page.reports.exportCsv")}
             </Button>
         {/snippet}
     </PageHeader>
 
-    <div class="mb-4 grid gap-3 sm:grid-cols-3">
+    <div class="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
             label="Total revenue"
             value={formatCurrency(totalRev, profile.currency)}
@@ -186,9 +399,14 @@
             value={formatCurrency(profit, profile.currency)}
             accent={profit >= 0 ? "brand" : "warning"}
         />
+        <StatCard
+            label="DSO (90d)"
+            value={dso === null ? "—" : `${dso} days`}
+            accent="brand"
+        />
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-2">
+    <div class="mb-4 grid gap-4 lg:grid-cols-2">
         <Card title="Revenue vs expenses">
             <ChartCanvas config={lineConfig} height={260} />
         </Card>
@@ -203,4 +421,80 @@
             {/if}
         </Card>
     </div>
+
+    <div class="mb-4 grid gap-4 lg:grid-cols-2">
+        <Card title="Cash-flow projection (next 6 months)">
+            <ChartCanvas config={cashFlowConfig} height={260} />
+            <p class="mt-2 text-[11px] text-vscode-description">
+                Outstanding bars show invoices grouped by due date. Projected
+                bars reuse the trailing 3-month paid average as a simple
+                forecast.
+            </p>
+        </Card>
+        <Card title="Project ROI">
+            {#if topRoi.length === 0}
+                <EmptyState
+                    title="No project activity"
+                    description="ROI shows once invoices or expenses are tagged to a project."
+                />
+            {:else}
+                <ChartCanvas config={roiConfig} height={260} />
+            {/if}
+        </Card>
+    </div>
+
+    <Card title="Effective hourly rate by project">
+        {#if perProject.filter((p) => p.hours > 0).length === 0}
+            <EmptyState
+                title="No time tracked yet"
+                description="Hourly rate computes once tasks have time entries."
+            />
+        {:else}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr
+                            class="border-b border-vscode-border text-left text-[11px] uppercase tracking-wide text-vscode-description"
+                        >
+                            <th class="pb-2">Project</th>
+                            <th class="pb-2 text-right">Paid revenue</th>
+                            <th class="pb-2 text-right">Hours</th>
+                            <th class="pb-2 text-right">$/hr</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each perProject.filter((p) => p.hours > 0) as p (p.id)}
+                            <tr
+                                class="border-b border-vscode-border last:border-0"
+                            >
+                                <td class="py-2">{p.name}</td>
+                                <td class="py-2 text-right">
+                                    {formatCurrency(
+                                        p.revenue,
+                                        profile.currency,
+                                    )}
+                                </td>
+                                <td class="py-2 text-right">
+                                    {p.hours.toFixed(1)}
+                                </td>
+                                <td class="py-2 text-right font-semibold">
+                                    {p.rate === null
+                                        ? "—"
+                                        : formatCurrency(
+                                              p.rate,
+                                              profile.currency,
+                                          )}
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-2 text-[11px] text-vscode-description">
+                Multi-currency totals are normalised to {profile.currency} via user-entered
+                rates in Settings. Currencies without a saved rate pass through at
+                face value.
+            </p>
+        {/if}
+    </Card>
 </div>

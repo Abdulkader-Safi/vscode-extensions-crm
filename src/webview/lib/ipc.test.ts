@@ -100,12 +100,8 @@ describe("ipc.request", () => {
   test("generates a unique id per request", () => {
     request("notify", { level: "info", message: "a" });
     request("notify", { level: "info", message: "b" });
-    const id1 = (
-      postMessage.mock.calls.at(-2)![0] as { id: string }
-    ).id;
-    const id2 = (
-      postMessage.mock.calls.at(-1)![0] as { id: string }
-    ).id;
+    const id1 = (postMessage.mock.calls.at(-2)![0] as { id: string }).id;
+    const id2 = (postMessage.mock.calls.at(-1)![0] as { id: string }).id;
     expect(id1).not.toBe(id2);
   });
 });
@@ -127,9 +123,9 @@ describe("ipc.on", () => {
     });
 
     expect(cb).toHaveBeenCalledTimes(1);
-    expect((cb.mock.calls[0][0] as { bootstrapped: boolean }).bootstrapped).toBe(
-      true,
-    );
+    expect(
+      (cb.mock.calls[0][0] as { bootstrapped: boolean }).bootstrapped,
+    ).toBe(true);
     off();
   });
 

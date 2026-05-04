@@ -10,6 +10,7 @@
         Wallet,
         BarChart3,
         Settings as SettingsIcon,
+        Trash2,
         LogOut,
     } from "lucide-svelte";
     import type { Snippet } from "svelte";
@@ -18,6 +19,9 @@
     import { cn } from "../utils";
     import NotificationsBell from "./NotificationsBell.svelte";
     import ConnectionBanner from "./ui/ConnectionBanner.svelte";
+    import { useTrashCountsQuery } from "../queries/trash";
+    import { commands } from "../commands.svelte";
+    import { _ } from "../../i18n";
 
     interface Props {
         children?: Snippet;
@@ -25,17 +29,61 @@
     let { children }: Props = $props();
 
     const navItems = [
-        { path: "/", label: "Dashboard", icon: LayoutDashboard },
-        { path: "/clients", label: "Clients", icon: Users },
-        { path: "/leads", label: "Leads", icon: Briefcase },
-        { path: "/projects", label: "Projects", icon: FolderKanban },
-        { path: "/tasks", label: "Tasks", icon: ListChecks },
-        { path: "/invoices", label: "Invoices", icon: Receipt },
-        { path: "/expenses", label: "Expenses", icon: Wallet },
-        { path: "/reports", label: "Reports", icon: BarChart3 },
-        { path: "/settings", label: "Settings", icon: SettingsIcon },
+        { path: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
+        { path: "/clients", labelKey: "nav.clients", icon: Users },
+        { path: "/leads", labelKey: "nav.leads", icon: Briefcase },
+        { path: "/projects", labelKey: "nav.projects", icon: FolderKanban },
+        { path: "/tasks", labelKey: "nav.tasks", icon: ListChecks },
+        { path: "/invoices", labelKey: "nav.invoices", icon: Receipt },
+        { path: "/expenses", labelKey: "nav.expenses", icon: Wallet },
+        { path: "/reports", labelKey: "nav.reports", icon: BarChart3 },
+        { path: "/settings", labelKey: "nav.settings", icon: SettingsIcon },
     ];
+
+    const trashCounts = useTrashCountsQuery();
+    const totalTrashed = $derived.by(() => {
+        const c = $trashCounts.data;
+        if (!c) {
+            return 0;
+        }
+        return (
+            c.clients + c.projects + c.tasks + c.invoices + c.expenses + c.leads
+        );
+    });
+
+    // Global keyboard shortcuts. Cmd/Ctrl+K opens the palette unconditionally
+    // (also from inside text inputs); Cmd+N runs the route's `primary-new`
+    // command if registered. Bare keys are ignored when typing in form fields
+    // so search inputs aren't hijacked.
+    function isTypingTarget(t: EventTarget | null): boolean {
+        if (!(t instanceof HTMLElement)) {
+            return false;
+        }
+        return (
+            t.tagName === "INPUT" ||
+            t.tagName === "TEXTAREA" ||
+            t.isContentEditable
+        );
+    }
+
+    function onGlobalKey(e: KeyboardEvent) {
+        const mod = e.metaKey || e.ctrlKey;
+        if (mod && e.key.toLowerCase() === "k") {
+            e.preventDefault();
+            commands.show();
+            return;
+        }
+        if (mod && e.key.toLowerCase() === "n" && !isTypingTarget(e.target)) {
+            const cmd = commands.primaryNew();
+            if (cmd) {
+                e.preventDefault();
+                cmd.run();
+            }
+        }
+    }
 </script>
+
+<svelte:window onkeydown={onGlobalKey} />
 
 <div class="flex h-full bg-vscode-bg text-vscode-fg">
     <aside
@@ -54,9 +102,7 @@
                 <div
                     class="h-7 w-7 rounded bg-brand text-brand-fg flex items-center justify-center text-xs font-bold"
                 >
-                    {(profile.profile?.display_name ??
-                        auth.user?.email ??
-                        "?")
+                    {(profile.profile?.display_name ?? auth.user?.email ?? "?")
                         .slice(0, 2)
                         .toUpperCase()}
                 </div>
@@ -83,17 +129,36 @@
                     )}
                 >
                     <item.icon class="h-4 w-4" />
-                    {item.label}
+                    {$_(item.labelKey)}
                 </a>
             {/each}
+            <a
+                use:link
+                href="/trash"
+                class={cn(
+                    "mt-auto flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-vscode-list-hover",
+                    router.location === "/trash" &&
+                        "bg-vscode-list-active-bg text-vscode-list-active-fg",
+                )}
+            >
+                <Trash2 class="h-4 w-4" />
+                <span>{$_("nav.trash")}</span>
+                {#if totalTrashed > 0}
+                    <span
+                        class="ml-auto inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-vscode-button-secondary-bg px-1 text-[10px] font-semibold"
+                    >
+                        {totalTrashed}
+                    </span>
+                {/if}
+            </a>
         </nav>
         <div class="border-t border-vscode-sidebar-border p-2">
             <button
                 class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-vscode-list-hover"
-                on:click={() => auth.signOut()}
+                onclick={() => auth.signOut()}
             >
                 <LogOut class="h-3.5 w-3.5" />
-                Sign out
+                {$_("nav.signOut")}
             </button>
         </div>
     </aside>

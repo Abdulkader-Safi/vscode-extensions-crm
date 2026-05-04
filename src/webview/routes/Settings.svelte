@@ -1,16 +1,22 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
-    import { Upload, Trash2 } from "lucide-svelte";
+    import { Upload, Trash2, Database } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Field from "../lib/components/ui/Field.svelte";
     import Input from "../lib/components/ui/Input.svelte";
     import Select from "../lib/components/ui/Select.svelte";
     import Button from "../lib/components/ui/Button.svelte";
+    import Dialog from "../lib/components/ui/Dialog.svelte";
     import { auth } from "../lib/stores/auth.svelte";
     import { profile } from "../lib/stores/profile.svelte";
+    import { config } from "../lib/stores/config.svelte";
+    import { request } from "../lib/ipc";
+    import { TIMEZONES } from "../lib/utils";
     import { useUpdateProfileMutation } from "../lib/queries/profile";
+    import { useReportsQuery } from "../lib/queries/reports";
+    import { _ } from "../i18n";
     import {
         uploadProfileAsset,
         removeProfileAsset,
@@ -31,6 +37,31 @@
     ];
 
     const updateMutation = useUpdateProfileMutation();
+    // Reports query already fetches every invoice + expense (used here to
+    // surface the set of currencies in active use). Cheap because this query
+    // is shared with /reports.
+    const reportsQuery = useReportsQuery();
+
+    // Mirror of profile.fx_rates kept editable in Settings. Saved alongside
+    // the other profile fields when the user clicks "Save changes".
+    let fxRates = $state<Record<string, number>>({});
+
+    const usedCurrencies = $derived.by(() => {
+        const set = new Set<string>();
+        for (const i of $reportsQuery.data?.invoices ?? []) {
+            if (i.currency) {
+                set.add(i.currency);
+            }
+        }
+        for (const e of $reportsQuery.data?.expenses ?? []) {
+            if (e.currency) {
+                set.add(e.currency);
+            }
+        }
+        // Drop the user's base currency — its rate is implicit (= 1).
+        set.delete(form.currency);
+        return Array.from(set).sort();
+    });
 
     let form = $state({
         display_name: "",
@@ -39,6 +70,7 @@
         tax_rate: "0",
         brand_color: "#7c5cff",
         language: "en",
+        timezone: "UTC",
     });
     let saving = $state(false);
     let avatarBusy = $state(false);
@@ -60,7 +92,9 @@
             await $updateMutation.mutateAsync(
                 kind === "avatar" ? { avatar_url: url } : { logo_url: url },
             );
-            toast.success(kind === "avatar" ? "Avatar updated" : "Logo updated");
+            toast.success(
+                kind === "avatar" ? "Avatar updated" : "Logo updated",
+            );
         } catch (e) {
             toast.error((e as Error).message);
         } finally {
@@ -105,8 +139,59 @@
             tax_rate: String(p.tax_rate),
             brand_color: p.brand_color,
             language: p.language,
+            timezone: p.timezone ?? "UTC",
         };
+        fxRates = { ...(p.fx_rates ?? {}) };
     });
+
+    let connectionOpen = $state(false);
+    let connectionForm = $state({ url: "", anonKey: "", serviceRoleKey: "" });
+    let connectionBusy = $state(false);
+    let connectionError = $state<string | null>(null);
+
+    function openConnectionDialog() {
+        connectionForm = {
+            url: config.supabaseUrl ?? "",
+            anonKey: config.anonKey ?? "",
+            serviceRoleKey: "",
+        };
+        connectionError = null;
+        connectionOpen = true;
+    }
+
+    async function saveConnection() {
+        const url = connectionForm.url.trim().replace(/\/$/, "");
+        const anonKey = connectionForm.anonKey.trim();
+        const serviceRoleKey = connectionForm.serviceRoleKey.trim();
+        if (!url || !anonKey || !serviceRoleKey) {
+            connectionError = "All three fields are required.";
+            return;
+        }
+        connectionBusy = true;
+        connectionError = null;
+        try {
+            const verify = (await request("boot/verify", {
+                url,
+                anonKey,
+                serviceRoleKey,
+            })) as { ok: true } | { ok: false; error: string };
+            if (!verify.ok) {
+                connectionError = verify.error;
+                return;
+            }
+            await request("boot/save-creds", { url, anonKey, serviceRoleKey });
+            // Switching connections during a live session means stale Supabase
+            // client + realtime channels. Forcing a webview reload is the
+            // simplest correct path; ErrorFallback already uses location.reload.
+            toast.success("Connection saved. Reloading…");
+            connectionOpen = false;
+            setTimeout(() => location.reload(), 600);
+        } catch (e) {
+            connectionError = (e as Error).message;
+        } finally {
+            connectionBusy = false;
+        }
+    }
 
     async function save() {
         if (!auth.user) {
@@ -114,6 +199,16 @@
         }
         saving = true;
         try {
+            // Strip any zero/blank rates before saving so the JSONB stays
+            // tidy. The base currency is excluded from `usedCurrencies` so
+            // it can never appear here.
+            const cleanFx: Record<string, number> = {};
+            for (const [k, v] of Object.entries(fxRates)) {
+                const n = Number(v);
+                if (Number.isFinite(n) && n > 0) {
+                    cleanFx[k] = n;
+                }
+            }
             await $updateMutation.mutateAsync({
                 display_name: form.display_name.trim().slice(0, 100) || null,
                 company_name: form.company_name.trim().slice(0, 100) || null,
@@ -121,6 +216,8 @@
                 tax_rate: Number(form.tax_rate),
                 brand_color: form.brand_color,
                 language: form.language,
+                timezone: form.timezone,
+                fx_rates: cleanFx,
             });
             toast.success("Settings saved");
         } catch (e) {
@@ -133,8 +230,8 @@
 
 <div class="p-6">
     <PageHeader
-        title="Settings"
-        description="Customize your workspace and branding."
+        title={$_("page.settings.title")}
+        description={$_("page.settings.description")}
     />
 
     <div class="max-w-2xl space-y-4">
@@ -150,9 +247,7 @@
                     <div
                         class="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-brand-fg text-sm font-semibold"
                     >
-                        {(form.display_name ||
-                            auth.user?.email ||
-                            "?")
+                        {(form.display_name || auth.user?.email || "?")
                             .slice(0, 2)
                             .toUpperCase()}
                     </div>
@@ -164,8 +259,7 @@
                         accept="image/*"
                         class="hidden"
                         onchange={(e) => {
-                            const f = (e.target as HTMLInputElement)
-                                .files?.[0];
+                            const f = (e.target as HTMLInputElement).files?.[0];
                             if (f) {
                                 pickFile("avatar", f);
                             }
@@ -208,6 +302,13 @@
                     <Select bind:value={form.language}>
                         <option value="en">English</option>
                         <option value="ar">العربية</option>
+                    </Select>
+                </Field>
+                <Field label={$_("settings.timezone")}>
+                    <Select bind:value={form.timezone}>
+                        {#each TIMEZONES as tz (tz)}
+                            <option value={tz}>{tz}</option>
+                        {/each}
                     </Select>
                 </Field>
             </div>
@@ -254,8 +355,7 @@
                         accept="image/*"
                         class="hidden"
                         onchange={(e) => {
-                            const f = (e.target as HTMLInputElement)
-                                .files?.[0];
+                            const f = (e.target as HTMLInputElement).files?.[0];
                             if (f) {
                                 pickFile("logo", f);
                             }
@@ -305,8 +405,129 @@
             </div>
         </Card>
 
+        <Card title={$_("settings.fxRates")}>
+            <p class="mb-3 text-xs text-vscode-description">
+                {$_("settings.fxRatesHint")}
+                <span class="font-semibold">{form.currency}</span>.
+            </p>
+            {#if usedCurrencies.length === 0}
+                <p class="text-xs text-vscode-description">
+                    No non-base currencies in use yet — rates appear here once
+                    you log an invoice or expense in a different currency.
+                </p>
+            {:else}
+                <div class="grid gap-2 sm:grid-cols-2">
+                    {#each usedCurrencies as cur (cur)}
+                        <div class="flex items-center gap-2">
+                            <span class="w-12 font-mono text-xs">1 {cur}</span>
+                            <span class="text-xs text-vscode-description"
+                                >=</span
+                            >
+                            <Input
+                                type="number"
+                                step="0.0001"
+                                placeholder="0.00"
+                                value={fxRates[cur] ?? ""}
+                                oninput={(e) => {
+                                    const v = (e.target as HTMLInputElement)
+                                        .value;
+                                    if (v === "") {
+                                        delete fxRates[cur];
+                                        fxRates = { ...fxRates };
+                                    } else {
+                                        fxRates = {
+                                            ...fxRates,
+                                            [cur]: Number(v),
+                                        };
+                                    }
+                                }}
+                            />
+                            <span class="text-xs text-vscode-description"
+                                >{form.currency}</span
+                            >
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        </Card>
+
         <Button variant="brand" size="lg" onclick={save} loading={saving}>
-            Save changes
+            {$_("common.saveChanges")}
         </Button>
+
+        <Card title={$_("settings.connection")}>
+            <div class="flex items-start gap-3">
+                <Database
+                    class="mt-0.5 h-4 w-4 shrink-0 text-vscode-description"
+                />
+                <div class="min-w-0 flex-1">
+                    <div class="text-xs text-vscode-description">
+                        {$_("settings.connectedTo")}
+                    </div>
+                    <div class="truncate font-mono text-xs">
+                        {config.supabaseUrl ?? "—"}
+                    </div>
+                </div>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onclick={openConnectionDialog}
+                >
+                    {$_("settings.change")}
+                </Button>
+            </div>
+        </Card>
     </div>
 </div>
+
+<Dialog
+    bind:open={connectionOpen}
+    title="Update Supabase connection"
+    description="The webview will reload after saving so the new credentials take effect."
+    size="lg"
+>
+    <div class="space-y-3">
+        <Field label="Project URL">
+            <Input
+                placeholder="https://xxxxx.supabase.co"
+                bind:value={connectionForm.url}
+            />
+        </Field>
+        <Field label="Anon key">
+            <Input
+                type="password"
+                placeholder="eyJ…"
+                bind:value={connectionForm.anonKey}
+            />
+        </Field>
+        <Field
+            label="Service-role key"
+            hint="Used once to apply migrations, then stored in SecretStorage."
+        >
+            <Input
+                type="password"
+                placeholder="eyJ…"
+                bind:value={connectionForm.serviceRoleKey}
+            />
+        </Field>
+        {#if connectionError}
+            <div
+                class="rounded border border-vscode-error/40 bg-vscode-error/10 px-3 py-2 text-xs text-vscode-error"
+            >
+                {connectionError}
+            </div>
+        {/if}
+    </div>
+    {#snippet footer()}
+        <Button variant="ghost" onclick={() => (connectionOpen = false)}>
+            Cancel
+        </Button>
+        <Button
+            variant="brand"
+            onclick={saveConnection}
+            loading={connectionBusy}
+        >
+            Verify &amp; save
+        </Button>
+    {/snippet}
+</Dialog>

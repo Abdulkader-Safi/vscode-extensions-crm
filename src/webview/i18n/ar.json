@@ -1,0 +1,102 @@
+{
+  "nav": {
+    "dashboard": "الرئيسية",
+    "clients": "العملاء",
+    "leads": "العملاء المحتملون",
+    "projects": "المشاريع",
+    "tasks": "المهام",
+    "invoices": "الفواتير",
+    "expenses": "المصروفات",
+    "reports": "التقارير",
+    "settings": "الإعدادات",
+    "trash": "المهملات",
+    "signOut": "تسجيل الخروج"
+  },
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "close": "إغلاق",
+    "create": "إنشاء",
+    "update": "تحديث",
+    "loading": "جارٍ التحميل…",
+    "search": "بحث",
+    "select": "تحديد",
+    "selectAll": "تحديد الكل",
+    "all": "الكل",
+    "clear": "مسح",
+    "saveChanges": "حفظ التغييرات",
+    "verifyAndSave": "التحقق والحفظ",
+    "downloadPdf": "تحميل PDF",
+    "preview": "معاينة"
+  },
+  "page": {
+    "dashboard": {
+      "title": "الرئيسية",
+      "description": "نظرة عامة على أعمالك."
+    },
+    "clients": {
+      "title": "العملاء",
+      "description": "إدارة كل من تتعامل معهم.",
+      "newAction": "إضافة عميل",
+      "searchPlaceholder": "ابحث عن عميل…"
+    },
+    "leads": {
+      "title": "العملاء المحتملون",
+      "description": "تتبّع الفرص في مسار المبيعات.",
+      "newAction": "عميل محتمل جديد"
+    },
+    "projects": {
+      "title": "المشاريع",
+      "description": "تابع كل ما تعمل عليه.",
+      "newAction": "مشروع جديد"
+    },
+    "tasks": {
+      "title": "المهام",
+      "description": "ابقَ متابعًا لكل ما يجب إنجازه.",
+      "newAction": "مهمة جديدة",
+      "boardLink": "اللوحة"
+    },
+    "invoices": {
+      "title": "الفواتير",
+      "description": "أرسل فواتير بشعارك وتابع المدفوعات.",
+      "newAction": "فاتورة جديدة"
+    },
+    "expenses": {
+      "title": "المصروفات",
+      "description": "سجّل كل تكلفة تتعلق بالعمل.",
+      "newAction": "مصروف جديد"
+    },
+    "reports": {
+      "title": "التقارير",
+      "description": "اعرف موقع أعمالك.",
+      "exportCsv": "تصدير CSV"
+    },
+    "settings": {
+      "title": "الإعدادات",
+      "description": "خصّص بيئة عملك وعلامتك التجارية."
+    },
+    "trash": {
+      "title": "المهملات",
+      "description": "استعد العناصر خلال ٥ ثوانٍ عبر زر التراجع، أو من هنا في أي وقت. الحذف النهائي لا رجعة فيه."
+    }
+  },
+  "settings": {
+    "profile": "الملف الشخصي",
+    "displayName": "الاسم الظاهر",
+    "company": "الشركة",
+    "email": "البريد الإلكتروني",
+    "language": "اللغة",
+    "currency": "العملة",
+    "taxRate": "نسبة الضريبة الافتراضية (%)",
+    "branding": "العلامة التجارية",
+    "brandColor": "لون العلامة (يظهر في ملفات PDF)",
+    "connection": "الاتصال",
+    "connectedTo": "متصل حاليًا بـ",
+    "change": "تغيير…",
+    "timezone": "المنطقة الزمنية",
+    "fxRates": "أسعار الصرف",
+    "fxRatesHint": "سعر كل عملة مقابل عملتك الأساسية. تُستخدم في التقارير لتوحيد المجاميع."
+  }
+}

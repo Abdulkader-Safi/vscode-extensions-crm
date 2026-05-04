@@ -19,12 +19,10 @@ export async function uploadProfileAsset(
   const ext = (file.name.split(".").pop() || "png").toLowerCase();
   const path = `${auth.user.id}/${kind}.${ext}`;
   const supa = getSupabase();
-  const { error: upErr } = await supa.storage
-    .from(BUCKET)
-    .upload(path, file, {
-      upsert: true,
-      contentType: file.type || `image/${ext}`,
-    });
+  const { error: upErr } = await supa.storage.from(BUCKET).upload(path, file, {
+    upsert: true,
+    contentType: file.type || `image/${ext}`,
+  });
   if (upErr) {
     throw upErr;
   }
@@ -40,7 +38,9 @@ export async function uploadProfileAsset(
 // Delete the asset (path is reconstructed from the kind only — we know the
 // extension of the *current* asset only via the existing signed URL, so we
 // list-and-remove anything matching <user_id>/<kind>.* instead).
-export async function removeProfileAsset(kind: ProfileAssetKind): Promise<void> {
+export async function removeProfileAsset(
+  kind: ProfileAssetKind,
+): Promise<void> {
   if (!auth.user) {
     throw new Error("Not authenticated");
   }

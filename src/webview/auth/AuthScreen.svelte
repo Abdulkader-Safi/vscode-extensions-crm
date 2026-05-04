@@ -118,7 +118,7 @@
         </div>
 
         <Card>
-            <form on:submit={submitEmail} class="space-y-3">
+            <form onsubmit={submitEmail} class="space-y-3">
                 {#if mode === "signup"}
                     <Field label="Display name (optional)">
                         <Input
@@ -235,7 +235,7 @@
             {#if mode !== "signin"}
                 <button
                     class="hover:text-vscode-fg"
-                    on:click={() => {
+                    onclick={() => {
                         mode = "signin";
                         reset();
                     }}
@@ -246,7 +246,7 @@
             {#if mode !== "signup"}
                 <button
                     class="hover:text-vscode-fg"
-                    on:click={() => {
+                    onclick={() => {
                         mode = "signup";
                         reset();
                     }}
@@ -257,7 +257,7 @@
             {#if mode !== "magic"}
                 <button
                     class="hover:text-vscode-fg"
-                    on:click={() => {
+                    onclick={() => {
                         mode = "magic";
                         reset();
                     }}
