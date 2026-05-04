@@ -1,17 +1,26 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import Router from "svelte-spa-router";
-    import { QueryClient, QueryClientProvider } from "@tanstack/svelte-query";
+    import {
+        QueryClient,
+        QueryClientProvider,
+        onlineManager,
+    } from "@tanstack/svelte-query";
 
     import { config } from "./lib/stores/config.svelte";
     import { auth } from "./lib/stores/auth.svelte";
     import { profile } from "./lib/stores/profile.svelte";
     import { startRealtime } from "./lib/queries/realtime";
+    import {
+        connection,
+        subscribeConnection,
+    } from "./lib/connection.svelte";
 
     import AppLayout from "./lib/components/AppLayout.svelte";
     import Toaster from "./lib/components/ui/Toaster.svelte";
     import ConfirmDialog from "./lib/components/ui/ConfirmDialog.svelte";
     import Spinner from "./lib/components/ui/Spinner.svelte";
+    import ErrorFallback from "./lib/components/ui/ErrorFallback.svelte";
 
     import Onboarding from "./onboarding/Onboarding.svelte";
     import AuthScreen from "./auth/AuthScreen.svelte";
@@ -29,9 +38,23 @@
     import Settings from "./routes/Settings.svelte";
     import NotFound from "./routes/NotFound.svelte";
 
+    onlineManager.setOnline(connection.status === "online");
+    onlineManager.setEventListener((setOnline) =>
+        subscribeConnection((status) => setOnline(status === "online")),
+    );
+
     const queryClient = new QueryClient({
         defaultOptions: {
-            queries: { staleTime: 30_000, refetchOnWindowFocus: false },
+            queries: {
+                staleTime: 30_000,
+                refetchOnWindowFocus: false,
+                refetchOnReconnect: true,
+                networkMode: "online",
+            },
+            mutations: {
+                networkMode: "online",
+                retry: 1,
+            },
         },
     });
 
@@ -100,7 +123,15 @@
         <AuthScreen />
     {:else}
         <AppLayout>
-            <Router {routes} />
+            <svelte:boundary
+                onerror={(error) =>
+                    console.error("[vs-crm] boundary caught:", error)}
+            >
+                <Router {routes} />
+                {#snippet failed(error, reset)}
+                    <ErrorFallback {error} {reset} />
+                {/snippet}
+            </svelte:boundary>
         </AppLayout>
     {/if}
     <Toaster />

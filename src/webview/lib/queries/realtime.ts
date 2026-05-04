@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/svelte-query";
 import { getSupabase } from "../supabase";
+import { markRealtimeStatus } from "../connection.svelte";
 import { TABLE_INVALIDATIONS } from "./keys";
 
 // Subscribe to postgres_changes for every table the app reads. When a row
@@ -31,7 +32,9 @@ export function startRealtime(client: QueryClient): () => void {
         }
       },
     )
-    .subscribe();
+    .subscribe((status) => {
+      markRealtimeStatus(status);
+    });
   return () => {
     supa.removeChannel(channel);
   };

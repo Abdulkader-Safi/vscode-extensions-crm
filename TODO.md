@@ -20,12 +20,14 @@
 - [x] Add status / project / priority filters to Tasks (with sort field + direction toggle in toolbar)
 - [x] Add column sorting on every table — clickable headers on Invoices/Expenses, sort dropdown for Projects (cards) and Tasks (list)
 - [x] ~~Add a "vs-crm: Apply pending migrations" command for shipped upgrades~~ — superseded: pending migrations now auto-apply on extension activate (`src/extension/bootstrap/autoApply.ts`). Service-role key + `_vscrm_exec_sql` helper persist so future bundles ship friction-free.
-- [ ] Add a top-level error boundary with a "Reload" button
-- [ ] Show a "Reconnecting…" banner when Supabase is unreachable
-- [ ] Retry queued mutations when connection comes back
-- [ ] Write tests for `splitSqlStatements`
-- [ ] Write tests for `runMigrations` (mock fetch)
-- [ ] Write tests for the IPC bus
+- [x] Add a top-level error boundary with a "Reload" button — `<svelte:boundary>` wraps `<Router>` inside `AppLayout`; `ErrorFallback.svelte` offers "Try again" (calls `reset`) + "Reload extension" (`location.reload()`). Sidebar/header stay rendered when a route crashes.
+- [x] Show a "Reconnecting…" banner when Supabase is unreachable — `ConnectionBanner.svelte` driven by `connection.svelte.ts` rune store; mounts above header in `AppLayout`. Status comes from realtime channel's `subscribe()` callback (`SUBSCRIBED → online`, `CHANNEL_ERROR | TIMED_OUT | CLOSED → offline` with 1.5s debounce).
+- [x] Retry queued mutations when connection comes back — TanStack Query's `onlineManager` is bound to the same connection store; `networkMode: "online"` on mutation defaults pauses + auto-replays on reconnect. No custom queue.
+- [x] Write tests for `splitSqlStatements` — 15 cases in `src/extension/bootstrap/sqlSplitter.test.ts` covering line/block comments, single-quote `''` escapes, untagged/tagged/nested/unterminated dollar quotes, multi-stmt + tail emission.
+- [x] Write tests for `runMigrations` (mock fetch) — 6 cases in `src/extension/bootstrap/orchestrator.test.ts`. Stubs `globalThis.fetch` per test; mocks `./migrations` via `mock.module` to bypass esbuild's `.sql` text loader and use deterministic fixtures. Covers all-applied, 404, mixed, RPC 500, network reject, headers.
+- [x] Write tests for the IPC bus — 8 cases in `src/webview/lib/ipc.test.ts`. Stubs `window.addEventListener` (Bun has no DOM) and `../vscodeApi` via `mock.module`. Covers request/response promise resolve+reject, mismatched-id ignore, unique-id, on/off/multi-subscriber.
+
+**Test runner:** `bun test` (Bun 1.3.9). Run with `bun run test:unit`. The existing `@vscode/test-cli` Mocha stub at `src/test/extension.test.ts` is untouched and reserved for future extension-host integration tests; the new unit suite is scoped to `src/extension src/webview src/shared`.
 
 ### Lower impact
 - [ ] Bulk select + delete for Clients

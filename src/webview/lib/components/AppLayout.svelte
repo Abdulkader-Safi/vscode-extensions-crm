@@ -17,6 +17,7 @@
     import { profile } from "../stores/profile.svelte";
     import { cn } from "../utils";
     import NotificationsBell from "./NotificationsBell.svelte";
+    import ConnectionBanner from "./ui/ConnectionBanner.svelte";
 
     interface Props {
         children?: Snippet;
@@ -97,6 +98,7 @@
         </div>
     </aside>
     <div class="flex min-w-0 flex-1 flex-col">
+        <ConnectionBanner />
         <header
             class="flex h-10 shrink-0 items-center justify-end border-b border-vscode-border bg-vscode-bg px-4 gap-2"
         >
