@@ -67,7 +67,7 @@
         <Bell class="h-4 w-4" />
         {#if unreadCount > 0}
             <span
-                class="absolute -right-0.5 -top-0.5 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-brand px-1 text-[9px] font-bold text-brand-fg"
+                class="absolute -right-0.5 -top-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-brand px-1 text-[9px] font-bold text-brand-fg"
             >
                 {unreadCount > 9 ? "9+" : unreadCount}
             </span>

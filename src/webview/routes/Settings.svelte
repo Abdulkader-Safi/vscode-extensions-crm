@@ -339,7 +339,7 @@
                     <img
                         src={profile.profile.logo_url}
                         alt="Logo"
-                        class="h-12 w-auto max-w-[160px] rounded border border-vscode-border bg-white object-contain px-2 py-1"
+                        class="h-12 w-auto max-w-40 rounded border border-vscode-border bg-white object-contain px-2 py-1"
                     />
                 {:else}
                     <div

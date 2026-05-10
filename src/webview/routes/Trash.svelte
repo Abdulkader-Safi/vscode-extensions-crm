@@ -111,7 +111,7 @@
                 {tab.label}
                 {#if c > 0}
                     <span
-                        class="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-vscode-button-secondary-bg px-1 text-[10px] font-semibold"
+                        class="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-vscode-button-secondary-bg px-1 text-[10px] font-semibold"
                     >
                         {c}
                     </span>

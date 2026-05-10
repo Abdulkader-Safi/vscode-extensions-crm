@@ -145,7 +145,7 @@
                 <span>{$_("nav.trash")}</span>
                 {#if totalTrashed > 0}
                     <span
-                        class="ml-auto inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-vscode-button-secondary-bg px-1 text-[10px] font-semibold"
+                        class="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-vscode-button-secondary-bg px-1 text-[10px] font-semibold"
                     >
                         {totalTrashed}
                     </span>

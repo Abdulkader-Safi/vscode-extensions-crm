@@ -65,7 +65,7 @@
 
 {#if commands.open}
     <div
-        class="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 p-4 pt-[15vh]"
+        class="fixed inset-0 z-60 flex items-start justify-center bg-black/40 p-4 pt-[15vh]"
         onclick={() => commands.hide()}
         onkeydown={onBackdropKey}
         role="button"

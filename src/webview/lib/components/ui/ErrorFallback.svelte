@@ -36,7 +36,7 @@
             the extension if the problem persists.
         </p>
         <pre
-            class="max-h-40 overflow-auto rounded border border-vscode-panel-border bg-vscode-bg p-2 text-[11px] text-vscode-description font-mono whitespace-pre-wrap break-words">{message}</pre>
+            class="max-h-40 overflow-auto rounded border border-vscode-panel-border bg-vscode-bg p-2 text-[11px] text-vscode-description font-mono whitespace-pre-wrap wrap-break-word">{message}</pre>
         <div class="flex gap-2">
             <Button variant="primary" onclick={() => reset()}>Try again</Button>
             <Button variant="ghost" onclick={() => location.reload()}
