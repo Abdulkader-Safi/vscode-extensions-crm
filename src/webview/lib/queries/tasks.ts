@@ -1,11 +1,20 @@
 import {
   createQuery,
+  createInfiniteQuery,
   createMutation,
   useQueryClient,
 } from "@tanstack/svelte-query";
+import type { Readable } from "svelte/store";
 import { getSupabase } from "../supabase";
 import { auth } from "../stores/auth.svelte";
 import { qk } from "./keys";
+import {
+  PAGE_SIZE,
+  derivedStore,
+  prependToCaches,
+  replaceInCaches,
+  patchInCaches,
+} from "./pagination";
 
 export type Task = {
   id: string;
@@ -50,8 +59,64 @@ export function useTasksQuery(projectId?: string) {
   });
 }
 
-type CreateCtx = { previous: Task[]; optimisticId: string };
-type UpdateCtx = { previous: Task[] };
+export type TaskListFilters = {
+  status?: string;
+  projectId?: string;
+  priority?: string;
+};
+export type TaskListSortField =
+  | "created_at"
+  | "due_date"
+  | "priority"
+  | "title";
+export type TaskListSort = {
+  field: TaskListSortField;
+  direction: "asc" | "desc";
+};
+
+// Paginated list query for /tasks. Filters move server-side via .eq().
+// Caveat: `priority` sort is alphabetical on the column (high/low/medium/urgent),
+// not by perceived urgency. The legacy client-side sort used a PRIORITY_RANK
+// mapping; replicating that server-side would need either a generated rank
+// column (extra migration) or PostgREST raw SQL. We accept alphabetical for
+// now — when sorting by priority isn't actually critical it's fine; the kanban
+// view shows urgency visually anyway.
+export function useTasksListQuery(
+  argsStore: Readable<{ filters: TaskListFilters; sort: TaskListSort }>,
+) {
+  return createInfiniteQuery(
+    derivedStore(argsStore, ({ filters, sort }) => ({
+      queryKey: ["tasks", "list", filters, sort] as readonly unknown[],
+      initialPageParam: 0,
+      getNextPageParam: (last: Task[], all: Task[][]) => {
+        if (last.length < PAGE_SIZE) return undefined;
+        return all.length * PAGE_SIZE;
+      },
+      queryFn: async ({ pageParam }: { pageParam: number }) => {
+        if (!auth.user) return [];
+        let q = getSupabase()
+          .from("tasks")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .is("deleted_at", null)
+          .order(sort.field, { ascending: sort.direction === "asc" })
+          .range(pageParam, pageParam + PAGE_SIZE - 1);
+        if (filters.status) q = q.eq("status", filters.status);
+        if (filters.projectId) q = q.eq("project_id", filters.projectId);
+        if (filters.priority) q = q.eq("priority", filters.priority);
+        const { data, error } = await q;
+        if (error) throw error;
+        return (data as Task[]) ?? [];
+      },
+    })),
+  );
+}
+
+type CreateCtx = {
+  snapshots: [readonly unknown[], unknown][];
+  optimisticId: string;
+};
+type UpdateCtx = { snapshots: [readonly unknown[], unknown][] };
 
 export function useCreateTaskMutation() {
   const client = useQueryClient();
@@ -72,7 +137,10 @@ export function useCreateTaskMutation() {
     },
     onMutate: async (payload) => {
       await client.cancelQueries({ queryKey: qk.tasks() });
-      const previous = client.getQueryData<Task[]>(qk.tasks()) ?? [];
+      const snapshots = client.getQueriesData({ queryKey: qk.tasks() }) as [
+        readonly unknown[],
+        unknown,
+      ][];
       const optimistic = {
         id: `optimistic-${crypto.randomUUID()}`,
         ...payload,
@@ -80,17 +148,22 @@ export function useCreateTaskMutation() {
         completed_at: payload.completed_at ?? null,
         created_at: new Date().toISOString(),
       } as Task;
-      client.setQueryData<Task[]>(qk.tasks(), [optimistic, ...previous]);
-      return { previous, optimisticId: optimistic.id };
+      client.setQueriesData({ queryKey: qk.tasks() }, (old) =>
+        prependToCaches(old, optimistic),
+      );
+      return { snapshots, optimisticId: optimistic.id };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx) {
-        client.setQueryData(qk.tasks(), ctx.previous);
+        for (const [key, data] of ctx.snapshots) {
+          client.setQueryData(key, data);
+        }
       }
     },
     onSuccess: (real, _vars, ctx) => {
-      client.setQueryData<Task[]>(qk.tasks(), (old) =>
-        (old ?? []).map((t) => (t.id === ctx?.optimisticId ? real : t)),
+      if (!ctx) return;
+      client.setQueriesData({ queryKey: qk.tasks() }, (old) =>
+        replaceInCaches(old, ctx.optimisticId, real),
       );
     },
     onSettled: () => {
@@ -121,17 +194,20 @@ export function useUpdateTaskMutation() {
     },
     onMutate: async (vars) => {
       await client.cancelQueries({ queryKey: qk.tasks() });
-      const previous = client.getQueryData<Task[]>(qk.tasks()) ?? [];
-      client.setQueryData<Task[]>(qk.tasks(), (old) =>
-        (old ?? []).map((t) =>
-          t.id === vars.id ? { ...t, ...vars.patch } : t,
-        ),
+      const snapshots = client.getQueriesData({ queryKey: qk.tasks() }) as [
+        readonly unknown[],
+        unknown,
+      ][];
+      client.setQueriesData({ queryKey: qk.tasks() }, (old) =>
+        patchInCaches(old, vars.id, vars.patch),
       );
-      return { previous };
+      return { snapshots };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx) {
-        client.setQueryData(qk.tasks(), ctx.previous);
+        for (const [key, data] of ctx.snapshots) {
+          client.setQueryData(key, data);
+        }
       }
     },
     onSettled: () => {

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { toast } from "svelte-sonner";
     import { SvelteSet } from "svelte/reactivity";
+    import { writable } from "svelte/store";
     import { useQueryClient } from "@tanstack/svelte-query";
     import {
         Plus,
@@ -28,10 +29,12 @@
     import { commands } from "../lib/commands.svelte";
     import { _ } from "../i18n";
     import {
-        useClientsQuery,
+        useClientsListQuery,
+        useClientTagsQuery,
         useCreateClientMutation,
         useUpdateClientMutation,
         type Client,
+        type ClientListFilters,
     } from "../lib/queries/clients";
 
     const blank = {
@@ -45,7 +48,6 @@
     };
 
     const queryClient = useQueryClient();
-    const clientsQuery = useClientsQuery();
     const createMutation = useCreateClientMutation();
     const updateMutation = useUpdateClientMutation();
 
@@ -56,30 +58,28 @@
     let selected = $state(new SvelteSet<string>());
     let selectedTags = $state(new SvelteSet<string>());
 
-    const clients = $derived($clientsQuery.data ?? []);
-    const allTags = $derived(
-        Array.from(new Set(clients.flatMap((c) => c.tags))).sort(),
+    // Server-side filters: search across name/company/email + OR-within-tags
+    // overlap. The argsStore is updated by the $effect below whenever the
+    // user's reactive $state changes — TanStack picks up the new queryKey and
+    // refetches from page 0.
+    const argsStore = writable<{ filters: ClientListFilters }>({
+        // svelte-ignore state_referenced_locally
+        filters: { search, tags: [...selectedTags] },
+    });
+    $effect(() => {
+        argsStore.set({
+            filters: { search, tags: [...selectedTags] },
+        });
+    });
+
+    const clientsQuery = useClientsListQuery(argsStore);
+    const tagsQuery = useClientTagsQuery();
+    const clients = $derived(
+        ($clientsQuery.data?.pages ?? []).flat() as Client[],
     );
-    const filtered = $derived(
-        clients.filter((c) => {
-            // OR-within-tags: client matches if it has ANY selected tag.
-            if (
-                selectedTags.size > 0 &&
-                !c.tags.some((t) => selectedTags.has(t))
-            ) {
-                return false;
-            }
-            if (!search) {
-                return true;
-            }
-            const q = search.toLowerCase();
-            return (
-                c.name.toLowerCase().includes(q) ||
-                (c.company ?? "").toLowerCase().includes(q) ||
-                (c.email ?? "").toLowerCase().includes(q)
-            );
-        }),
-    );
+    // Distinct tag set comes from a separate query so the chip strip shows
+    // every tag the user has, not just the ones on currently-loaded pages.
+    const allTags = $derived($tagsQuery.data ?? []);
 
     function toggleTag(t: string) {
         if (selectedTags.has(t)) {
@@ -218,12 +218,12 @@
                 bind:value={search}
             />
         </div>
-        {#if filtered.length > 0}
+        {#if clients.length > 0}
             <label
                 class="flex items-center gap-2 text-xs text-vscode-description"
             >
                 <SelectableHeader
-                    ids={filtered.map((c) => c.id)}
+                    ids={clients.map((c) => c.id)}
                     {selected}
                     onchange={(next) => {
                         selected = new SvelteSet(next);
@@ -263,7 +263,7 @@
 
     {#if $clientsQuery.isLoading}
         <div class="text-xs text-vscode-description">Loading…</div>
-    {:else if filtered.length === 0}
+    {:else if clients.length === 0}
         <Card>
             <EmptyState
                 title={search ? "No matches" : "No clients yet"}
@@ -282,7 +282,7 @@
         </Card>
     {:else}
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {#each filtered as c (c.id)}
+            {#each clients as c (c.id)}
                 <Card
                     class="group cursor-pointer"
                     onclick={() => navigateToDetail(c)}
@@ -365,6 +365,20 @@
                 </Card>
             {/each}
         </div>
+        {#if $clientsQuery.hasNextPage}
+            <div class="mt-3 flex justify-center">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={$clientsQuery.isFetchingNextPage}
+                    onclick={() => $clientsQuery.fetchNextPage()}
+                >
+                    {$clientsQuery.isFetchingNextPage
+                        ? "Loading…"
+                        : "Load more"}
+                </Button>
+            </div>
+        {/if}
     {/if}
 </div>
 

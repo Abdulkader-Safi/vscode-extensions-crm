@@ -1,11 +1,20 @@
 import {
   createQuery,
+  createInfiniteQuery,
   createMutation,
   useQueryClient,
 } from "@tanstack/svelte-query";
+import type { Readable } from "svelte/store";
 import { getSupabase } from "../supabase";
 import { auth } from "../stores/auth.svelte";
 import { qk } from "./keys";
+import {
+  PAGE_SIZE,
+  derivedStore,
+  prependToCaches,
+  replaceInCaches,
+  patchInCaches,
+} from "./pagination";
 
 export type Project = {
   id: string;
@@ -68,8 +77,61 @@ export function useProjectQuery(id: string) {
   });
 }
 
-type CreateCtx = { previous: Project[]; optimisticId: string };
-type UpdateCtx = { previousList: Project[]; previousOne: Project | undefined };
+export type ProjectListFilters = {
+  status?: string;
+  clientId?: string;
+};
+export type ProjectListSortField =
+  | "created_at"
+  | "name"
+  | "end_date"
+  | "budget";
+export type ProjectListSort = {
+  field: ProjectListSortField;
+  direction: "asc" | "desc";
+};
+
+export function useProjectsListQuery(
+  argsStore: Readable<{
+    filters: ProjectListFilters;
+    sort: ProjectListSort;
+  }>,
+) {
+  return createInfiniteQuery(
+    derivedStore(argsStore, ({ filters, sort }) => ({
+      queryKey: ["projects", "list", filters, sort] as readonly unknown[],
+      initialPageParam: 0,
+      getNextPageParam: (last: Project[], all: Project[][]) => {
+        if (last.length < PAGE_SIZE) return undefined;
+        return all.length * PAGE_SIZE;
+      },
+      queryFn: async ({ pageParam }: { pageParam: number }) => {
+        if (!auth.user) return [];
+        let q = getSupabase()
+          .from("projects")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .is("deleted_at", null)
+          .order(sort.field, { ascending: sort.direction === "asc" })
+          .range(pageParam, pageParam + PAGE_SIZE - 1);
+        if (filters.status) q = q.eq("status", filters.status);
+        if (filters.clientId) q = q.eq("client_id", filters.clientId);
+        const { data, error } = await q;
+        if (error) throw error;
+        return (data as Project[]) ?? [];
+      },
+    })),
+  );
+}
+
+type CreateCtx = {
+  snapshots: [readonly unknown[], unknown][];
+  optimisticId: string;
+};
+type UpdateCtx = {
+  snapshots: [readonly unknown[], unknown][];
+  previousOne: Project | undefined;
+};
 
 export function useCreateProjectMutation() {
   const client = useQueryClient();
@@ -95,23 +157,31 @@ export function useCreateProjectMutation() {
     },
     onMutate: async (payload) => {
       await client.cancelQueries({ queryKey: qk.projects() });
-      const previous = client.getQueryData<Project[]>(qk.projects()) ?? [];
+      const snapshots = client.getQueriesData({ queryKey: qk.projects() }) as [
+        readonly unknown[],
+        unknown,
+      ][];
       const optimistic = {
         id: `optimistic-${crypto.randomUUID()}`,
         ...payload,
         created_at: new Date().toISOString(),
       } as Project;
-      client.setQueryData<Project[]>(qk.projects(), [optimistic, ...previous]);
-      return { previous, optimisticId: optimistic.id };
+      client.setQueriesData({ queryKey: qk.projects() }, (old) =>
+        prependToCaches(old, optimistic),
+      );
+      return { snapshots, optimisticId: optimistic.id };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx) {
-        client.setQueryData(qk.projects(), ctx.previous);
+        for (const [key, data] of ctx.snapshots) {
+          client.setQueryData(key, data);
+        }
       }
     },
     onSuccess: (real, _vars, ctx) => {
-      client.setQueryData<Project[]>(qk.projects(), (old) =>
-        (old ?? []).map((p) => (p.id === ctx?.optimisticId ? real : p)),
+      if (!ctx) return;
+      client.setQueriesData({ queryKey: qk.projects() }, (old) =>
+        replaceInCaches(old, ctx.optimisticId, real),
       );
     },
     onSettled: () => {
@@ -143,12 +213,13 @@ export function useUpdateProjectMutation() {
     onMutate: async (vars) => {
       await client.cancelQueries({ queryKey: qk.projects() });
       await client.cancelQueries({ queryKey: qk.project(vars.id) });
-      const previousList = client.getQueryData<Project[]>(qk.projects()) ?? [];
+      const snapshots = client.getQueriesData({ queryKey: qk.projects() }) as [
+        readonly unknown[],
+        unknown,
+      ][];
       const previousOne = client.getQueryData<Project>(qk.project(vars.id));
-      client.setQueryData<Project[]>(qk.projects(), (old) =>
-        (old ?? []).map((p) =>
-          p.id === vars.id ? { ...p, ...vars.patch } : p,
-        ),
+      client.setQueriesData({ queryKey: qk.projects() }, (old) =>
+        patchInCaches(old, vars.id, vars.patch),
       );
       if (previousOne) {
         client.setQueryData<Project>(qk.project(vars.id), {
@@ -156,11 +227,13 @@ export function useUpdateProjectMutation() {
           ...vars.patch,
         });
       }
-      return { previousList, previousOne };
+      return { snapshots, previousOne };
     },
     onError: (_err, vars, ctx) => {
       if (ctx) {
-        client.setQueryData(qk.projects(), ctx.previousList);
+        for (const [key, data] of ctx.snapshots) {
+          client.setQueryData(key, data);
+        }
         if (ctx.previousOne) {
           client.setQueryData(qk.project(vars.id), ctx.previousOne);
         }

@@ -25,12 +25,14 @@
     import { _ } from "../i18n";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency } from "../lib/utils";
-    import { compareBy, type SortDir } from "../lib/sort";
+    import { writable } from "svelte/store";
     import {
-        useProjectsQuery,
+        useProjectsListQuery,
         useCreateProjectMutation,
         useUpdateProjectMutation,
         type Project,
+        type ProjectListFilters,
+        type ProjectListSort,
     } from "../lib/queries/projects";
     import { useClientsQuery } from "../lib/queries/clients";
 
@@ -52,7 +54,6 @@
     };
 
     const queryClient = useQueryClient();
-    const projectsQuery = useProjectsQuery();
     const clientsQuery = useClientsQuery();
     const createMutation = useCreateProjectMutation();
     const updateMutation = useUpdateProjectMutation();
@@ -61,28 +62,34 @@
     let editing = $state<Project | null>(null);
     let form = $state({ ...blank });
 
-    const projects = $derived($projectsQuery.data ?? []);
     const clients = $derived($clientsQuery.data ?? []);
 
-    type SortField = "created_at" | "name" | "end_date" | "budget";
-    let filters = $state({ status: "", clientId: "" });
-    let sort = $state<{ field: SortField; direction: SortDir }>({
+    let filters = $state<ProjectListFilters>({ status: "", clientId: "" });
+    let sort = $state<ProjectListSort>({
         field: "created_at",
         direction: "desc",
     });
 
-    const filteredSorted = $derived.by(() => {
-        const filtered = projects.filter(
-            (p) =>
-                (!filters.status || p.status === filters.status) &&
-                (!filters.clientId || p.client_id === filters.clientId),
-        );
-        const sortKey: (p: Project) => unknown =
-            sort.field === "budget"
-                ? (p) => Number(p.budget ?? 0)
-                : (p) => p[sort.field];
-        return [...filtered].sort(compareBy(sortKey, sort.direction));
+    const argsStore = writable<{
+        filters: ProjectListFilters;
+        sort: ProjectListSort;
+    }>({
+        // svelte-ignore state_referenced_locally
+        filters: $state.snapshot(filters),
+        // svelte-ignore state_referenced_locally
+        sort: $state.snapshot(sort),
     });
+    $effect(() => {
+        argsStore.set({
+            filters: $state.snapshot(filters),
+            sort: $state.snapshot(sort),
+        });
+    });
+
+    const projectsQuery = useProjectsListQuery(argsStore);
+    const projects = $derived(
+        ($projectsQuery.data?.pages ?? []).flat() as Project[],
+    );
 
     const filtersActive = $derived(
         !!filters.status ||
@@ -253,7 +260,7 @@
                 </Button>
             {/if}
         </div>
-        {#if filteredSorted.length === 0}
+        {#if projects.length === 0}
             <Card>
                 <p class="py-6 text-center text-xs text-vscode-description">
                     No projects match these filters.
@@ -261,7 +268,7 @@
             </Card>
         {:else}
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {#each filteredSorted as p (p.id)}
+                {#each projects as p (p.id)}
                     {@const s = statusInfo(p.status)}
                     <Card
                         class="group cursor-pointer"
@@ -331,6 +338,20 @@
                     </Card>
                 {/each}
             </div>
+            {#if $projectsQuery.hasNextPage}
+                <div class="mt-3 flex justify-center">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={$projectsQuery.isFetchingNextPage}
+                        onclick={() => $projectsQuery.fetchNextPage()}
+                    >
+                        {$projectsQuery.isFetchingNextPage
+                            ? "Loading…"
+                            : "Load more"}
+                    </Button>
+                </div>
+            {/if}
         {/if}
     {/if}
 </div>

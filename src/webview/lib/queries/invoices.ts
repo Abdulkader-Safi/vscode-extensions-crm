@@ -8,7 +8,7 @@ import type { Readable } from "svelte/store";
 import { getSupabase } from "../supabase";
 import { auth } from "../stores/auth.svelte";
 import { qk } from "./keys";
-import { PAGE_SIZE } from "./pagination";
+import { PAGE_SIZE, derivedStore, patchInCaches } from "./pagination";
 
 export type Invoice = {
   id: string;
@@ -127,20 +127,6 @@ export function useInvoicesListQuery(
   );
 }
 
-// Tiny `derived` shim — re-export-light. We avoid importing svelte/store's
-// `derived` because Svelte 5 in webview prefers $derived. But TanStack
-// `createInfiniteQuery` accepts a Readable<options>, so we need a store
-// adapter. Subscribes to the source and re-projects each update.
-function derivedStore<S, T>(
-  source: Readable<S>,
-  project: (s: S) => T,
-): Readable<T> {
-  return {
-    subscribe: (run, invalidate) =>
-      source.subscribe((s) => run(project(s)), invalidate),
-  };
-}
-
 // Fetch invoice items on demand (e.g. PDF export) — we don't keep them
 // in sync with the invoice list query.
 export async function loadInvoiceItems(
@@ -156,30 +142,6 @@ type UpdateCtx = {
   // saw.
   snapshots: [readonly unknown[], unknown][];
 };
-
-// Helper: apply a per-row patch to a cache entry of either shape.
-function patchInvoiceCache(
-  old: unknown,
-  id: string,
-  patch: Partial<Invoice>,
-): unknown {
-  if (!old) return old;
-  if (Array.isArray(old)) {
-    return (old as Invoice[]).map((i) =>
-      i.id === id ? { ...i, ...patch } : i,
-    );
-  }
-  if (typeof old === "object" && old !== null && "pages" in old) {
-    const data = old as { pages: Invoice[][]; pageParams: unknown[] };
-    return {
-      ...data,
-      pages: data.pages.map((page) =>
-        page.map((i) => (i.id === id ? { ...i, ...patch } : i)),
-      ),
-    };
-  }
-  return old;
-}
 
 // Save-invoice (upsert + replace items) — atomic via the `crm_save_invoice`
 // plpgsql function (migrations/0008_invoice_save_fn.sql). The whole
@@ -264,7 +226,7 @@ export function useUpdateInvoiceMutation() {
         unknown,
       ][];
       client.setQueriesData({ queryKey: qk.invoices() }, (old) =>
-        patchInvoiceCache(old, vars.id, vars.patch),
+        patchInCaches(old, vars.id, vars.patch),
       );
       return { snapshots };
     },

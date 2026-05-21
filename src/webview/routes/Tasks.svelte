@@ -27,9 +27,11 @@
     import { commands } from "../lib/commands.svelte";
     import { _ } from "../i18n";
     import { formatMinutes } from "../lib/utils";
-    import { compareBy, type SortDir } from "../lib/sort";
+    import { writable } from "svelte/store";
     import {
-        useTasksQuery,
+        useTasksListQuery,
+        type TaskListFilters,
+        type TaskListSort,
         useCreateTaskMutation,
         useUpdateTaskMutation,
         useStopTimerMutation,
@@ -37,7 +39,6 @@
     } from "../lib/queries/tasks";
     import { useProjectsQuery } from "../lib/queries/projects";
 
-    const PRIORITY_RANK = { low: 0, medium: 1, high: 2, urgent: 3 } as const;
 
     const PRIORITIES = ["low", "medium", "high", "urgent"];
     const STATUSES = ["todo", "in_progress", "done"];
@@ -60,7 +61,6 @@
     };
 
     const queryClient = useQueryClient();
-    const tasksQuery = useTasksQuery();
     const projectsQuery = useProjectsQuery();
     const createMutation = useCreateTaskMutation();
     const updateMutation = useUpdateTaskMutation();
@@ -93,31 +93,36 @@
         }
     });
 
-    const tasks = $derived($tasksQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
 
-    type SortField = "created_at" | "due_date" | "priority" | "title";
-    let filters = $state({ status: "", projectId: "", priority: "" });
-    let sort = $state<{ field: SortField; direction: SortDir }>({
+    let filters = $state<TaskListFilters>({
+        status: "",
+        projectId: "",
+        priority: "",
+    });
+    let sort = $state<TaskListSort>({
         field: "created_at",
         direction: "desc",
     });
 
-    const filteredSorted = $derived.by(() => {
-        const filtered = tasks.filter(
-            (t) =>
-                (!filters.status || t.status === filters.status) &&
-                (!filters.priority || t.priority === filters.priority) &&
-                (!filters.projectId || t.project_id === filters.projectId),
-        );
-        const sortKey: (t: Task) => unknown =
-            sort.field === "priority"
-                ? (t) =>
-                      PRIORITY_RANK[t.priority as keyof typeof PRIORITY_RANK] ??
-                      -1
-                : (t) => t[sort.field];
-        return [...filtered].sort(compareBy(sortKey, sort.direction));
+    const argsStore = writable<{
+        filters: TaskListFilters;
+        sort: TaskListSort;
+    }>({
+        // svelte-ignore state_referenced_locally
+        filters: $state.snapshot(filters),
+        // svelte-ignore state_referenced_locally
+        sort: $state.snapshot(sort),
     });
+    $effect(() => {
+        argsStore.set({
+            filters: $state.snapshot(filters),
+            sort: $state.snapshot(sort),
+        });
+    });
+
+    const tasksQuery = useTasksListQuery(argsStore);
+    const tasks = $derived(($tasksQuery.data?.pages ?? []).flat() as Task[]);
 
     const filtersActive = $derived(
         !!filters.status ||
@@ -312,12 +317,12 @@
         </div>
         <Card>
             <div class="divide-y divide-vscode-border">
-                {#if filteredSorted.length === 0}
+                {#if tasks.length === 0}
                     <p class="py-6 text-center text-xs text-vscode-description">
                         No tasks match these filters.
                     </p>
                 {/if}
-                {#each filteredSorted as t (t.id)}
+                {#each tasks as t (t.id)}
                     {@const isRunning = running?.taskId === t.id}
                     {@const pn = projectName(t.project_id)}
                     <div class="group flex items-center gap-3 py-2">
@@ -402,6 +407,20 @@
                 {/each}
             </div>
         </Card>
+        {#if $tasksQuery.hasNextPage}
+            <div class="mt-3 flex justify-center">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={$tasksQuery.isFetchingNextPage}
+                    onclick={() => $tasksQuery.fetchNextPage()}
+                >
+                    {$tasksQuery.isFetchingNextPage
+                        ? "Loading…"
+                        : "Load more"}
+                </Button>
+            </div>
+        {/if}
     {/if}
 </div>
 

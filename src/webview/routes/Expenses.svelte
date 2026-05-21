@@ -1,6 +1,7 @@
 <script lang="ts">
     import { toast } from "svelte-sonner";
     import { SvelteSet } from "svelte/reactivity";
+    import { writable } from "svelte/store";
     import { useQueryClient } from "@tanstack/svelte-query";
     import { Plus, Trash2 } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
@@ -21,11 +22,14 @@
     import { _ } from "../i18n";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
-    import { compareBy, type SortDir } from "../lib/sort";
-    import { inDateRange } from "../lib/dateFilter";
     import {
-        useExpensesQuery,
+        useExpensesListQuery,
+        useExpenseTotalsQuery,
         useCreateExpenseMutation,
+        type Expense,
+        type ExpenseListFilters,
+        type ExpenseListSort,
+        type ExpenseListSortField,
     } from "../lib/queries/expenses";
     import { useProjectsQuery } from "../lib/queries/projects";
     import { useClientsQuery } from "../lib/queries/clients";
@@ -43,9 +47,9 @@
     ];
 
     const queryClient = useQueryClient();
-    const expensesQuery = useExpensesQuery();
     const projectsQuery = useProjectsQuery();
     const clientsQuery = useClientsQuery();
+    const totalsQuery = useExpenseTotalsQuery();
     const createMutation = useCreateExpenseMutation();
 
     let selected = $state(new SvelteSet<string>());
@@ -72,48 +76,54 @@
         }),
     );
 
-    const expenses = $derived($expensesQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
     const clients = $derived($clientsQuery.data ?? []);
 
-    type SortField = "expense_date" | "category" | "amount";
-    let filters = $state({ category: "", from: "", to: "", clientId: "" });
-    let sort = $state<{ field: SortField; direction: SortDir }>({
+    let filters = $state<{
+        category: string;
+        from: string;
+        to: string;
+        clientId: string;
+    }>({ category: "", from: "", to: "", clientId: "" });
+    let sort = $state<ExpenseListSort>({
         field: "expense_date",
         direction: "desc",
     });
 
-    const clientIdByProject = $derived(
-        new Map(projects.map((p) => [p.id, p.client_id])),
+    // Project IDs for the selected client — passed to the server query as
+    // `.in("project_id", projectIds)`. Stays empty when no client filter.
+    const projectIdsForClient = $derived(
+        filters.clientId
+            ? projects
+                  .filter((p) => p.client_id === filters.clientId)
+                  .map((p) => p.id)
+            : [],
     );
 
-    const filteredSorted = $derived.by(() => {
-        const filtered = expenses.filter((e) => {
-            if (filters.category && e.category !== filters.category) {
-                return false;
-            }
-            if (!inDateRange(e.expense_date, filters.from, filters.to)) {
-                return false;
-            }
-            if (filters.clientId) {
-                const cid = e.project_id
-                    ? (clientIdByProject.get(e.project_id) ?? null)
-                    : null;
-                if (cid !== filters.clientId) {
-                    return false;
-                }
-            }
-            return true;
+    const argsStore = writable<{
+        filters: ExpenseListFilters;
+        sort: ExpenseListSort;
+    }>({
+        // svelte-ignore state_referenced_locally
+        filters: { category: "", from: "", to: "", projectIds: undefined },
+        // svelte-ignore state_referenced_locally
+        sort: $state.snapshot(sort),
+    });
+    $effect(() => {
+        argsStore.set({
+            filters: {
+                category: filters.category || undefined,
+                from: filters.from || undefined,
+                to: filters.to || undefined,
+                projectIds: filters.clientId ? projectIdsForClient : undefined,
+            },
+            sort: $state.snapshot(sort),
         });
-        const sortKey: (e: (typeof expenses)[number]) => unknown =
-            sort.field === "amount"
-                ? (e) => Number(e.amount)
-                : (e) => e[sort.field];
-        return [...filtered].sort(compareBy(sortKey, sort.direction));
     });
 
-    const usedCategories = $derived(
-        Array.from(new Set(expenses.map((e) => e.category))).sort(),
+    const expensesQuery = useExpensesListQuery(argsStore);
+    const expenses = $derived(
+        ($expensesQuery.data?.pages ?? []).flat() as Expense[],
     );
 
     const filtersActive = $derived(
@@ -125,7 +135,7 @@
             sort.direction !== "desc",
     );
 
-    function toggleSort(field: SortField) {
+    function toggleSort(field: ExpenseListSortField) {
         if (sort.field === field) {
             sort = {
                 field,
@@ -141,15 +151,11 @@
         sort = { field: "expense_date", direction: "desc" };
     }
 
-    const total = $derived(expenses.reduce((s, e) => s + Number(e.amount), 0));
-    // Use the actual current month — `monthlyMap[0]` would mislabel the most
-    // recent past month as "this month" when nothing has been logged yet.
-    const thisMonth = $derived.by(() => {
-        const ym = new Date().toISOString().slice(0, 7);
-        return expenses
-            .filter((e) => e.expense_date.slice(0, 7) === ym)
-            .reduce((s, e) => s + Number(e.amount), 0);
-    });
+    // StatCards now read server-side aggregates so they reflect every
+    // expense, not just currently-loaded pages.
+    const totals = $derived(
+        $totalsQuery.data ?? { total: 0, thisMonth: 0, count: 0 },
+    );
 
     async function create() {
         try {
@@ -222,14 +228,14 @@
     <div class="mb-4 grid gap-3 sm:grid-cols-3">
         <StatCard
             label="Total"
-            value={formatCurrency(total, profile.currency)}
+            value={formatCurrency(totals.total, profile.currency)}
         />
         <StatCard
             label="This month"
-            value={formatCurrency(thisMonth, profile.currency)}
+            value={formatCurrency(totals.thisMonth, profile.currency)}
             accent="warning"
         />
-        <StatCard label="Entries" value={String(expenses.length)} />
+        <StatCard label="Entries" value={String(totals.count)} />
     </div>
 
     {#if $expensesQuery.isLoading}
@@ -246,7 +252,7 @@
             <Field label="Category">
                 <Select bind:value={filters.category}>
                     <option value="">All</option>
-                    {#each usedCategories as c (c)}
+                    {#each CATEGORIES as c (c)}
                         <option value={c}>{c}</option>
                     {/each}
                 </Select>
@@ -278,7 +284,7 @@
                         <tr class="border-b border-vscode-border text-left">
                             <th class="w-6 pb-2">
                                 <SelectableHeader
-                                    ids={filteredSorted.map((e) => e.id)}
+                                    ids={expenses.map((e) => e.id)}
                                     {selected}
                                     onchange={(next) => {
                                         selected = new SvelteSet(next);
@@ -321,7 +327,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {#if filteredSorted.length === 0}
+                        {#if expenses.length === 0}
                             <tr>
                                 <td
                                     colspan="7"
@@ -331,7 +337,7 @@
                                 </td>
                             </tr>
                         {/if}
-                        {#each filteredSorted as e (e.id)}
+                        {#each expenses as e (e.id)}
                             <tr
                                 class="group border-b border-vscode-border last:border-0"
                             >
@@ -376,6 +382,20 @@
                 </table>
             </div>
         </Card>
+        {#if $expensesQuery.hasNextPage}
+            <div class="mt-3 flex justify-center">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={$expensesQuery.isFetchingNextPage}
+                    onclick={() => $expensesQuery.fetchNextPage()}
+                >
+                    {$expensesQuery.isFetchingNextPage
+                        ? "Loading…"
+                        : "Load more"}
+                </Button>
+            </div>
+        {/if}
     {/if}
 </div>
 
