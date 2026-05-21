@@ -41,8 +41,7 @@
   },
   "activationEvents": [
     "onCommand:vs-crm.open",
-    "onCommand:vs-crm.resetOnboarding",
-    "onCommand:vs-crm.devOAuthSmoke"
+    "onCommand:vs-crm.resetOnboarding"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -55,11 +54,6 @@
       {
         "command": "vs-crm.resetOnboarding",
         "title": "Reset Onboarding (clears stored credentials)",
-        "category": "vs-crm"
-      },
-      {
-        "command": "vs-crm.devOAuthSmoke",
-        "title": "Dev: Supabase OAuth smoke test",
         "category": "vs-crm"
       }
     ]

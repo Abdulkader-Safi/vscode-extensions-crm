@@ -67,21 +67,6 @@ For Google / GitHub OAuth, also configure the provider in **Authentication → P
 
 Most CRMs lock you into their database. vs-crm gives you full ownership: you can query the tables directly with `psql`, back them up however you like, run other tools against them, and the extension never proxies your data.
 
-## Why is there a GitHub Pages site for OAuth?
-
-vs-crm uses **Supabase's Management API OAuth** (PKCE) to power the 1-click "Continue with Supabase" onboarding — the same pattern Lovable and other Supabase integrations use. This is separate from the end-user sign-in flow inside your CRM (magic links / Google / GitHub), which still uses the normal `vscode://abdulkadersafi.vs-crm/auth-callback` URI handler.
-
-Supabase's Management OAuth (`https://api.supabase.com/v1/oauth/*`) — unlike Supabase Auth — **requires an HTTPS redirect URI**. It rejects both custom URI schemes (`vscode://…`) and plain HTTP loopback (`http://127.0.0.1:…`). VS Code extensions can't host HTTPS endpoints, so we use the standard native-app workaround:
-
-1. We host a tiny static HTML page on GitHub Pages at [vs-crm-oauth.abdulkadersafi.com](https://vs-crm-oauth.abdulkadersafi.com) (or the equivalent `*.github.io` URL).
-2. Supabase redirects the browser there after the user approves the consent screen, with `?code=…&state=…`.
-3. The page reads those query params and immediately deep-links to `vscode://abdulkadersafi.vs-crm/oauth-callback?code=…&state=…`.
-4. VS Code's URI handler catches it, the extension exchanges the code for tokens at Supabase's token endpoint, and we're authorized.
-
-The bouncer page has **no backend** and reads no data — it's a 50-line HTML file. The source lives in [`docs/oauth-callback/index.html`](./docs/oauth-callback/index.html) in this repo and is served by GitHub Pages straight from the same repo's `/docs` folder. You can audit it before authorizing.
-
-This pattern is used by GitHub Desktop, Linear, Raycast, and most other native Supabase integrations — it's the standard solution to OAuth providers that don't trust loopback URIs.
-
 ## Schema
 
 The extension provisions:
