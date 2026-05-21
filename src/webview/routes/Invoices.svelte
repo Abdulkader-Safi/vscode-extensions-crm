@@ -1,6 +1,7 @@
 <script lang="ts">
     import { toast } from "svelte-sonner";
     import { SvelteSet } from "svelte/reactivity";
+    import { writable } from "svelte/store";
     import { useQueryClient } from "@tanstack/svelte-query";
     import { Plus, Trash2, Pencil, FileDown, Eye, Check } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
@@ -23,8 +24,6 @@
     import { _ } from "../i18n";
     import { profile } from "../lib/stores/profile.svelte";
     import { formatCurrency, ymd } from "../lib/utils";
-    import { compareBy, type SortDir } from "../lib/sort";
-    import { inDateRange } from "../lib/dateFilter";
     import {
         loadInvoicePreview,
         renderInvoicePdf,
@@ -32,12 +31,15 @@
     } from "../lib/invoicePreview";
     import { saveBinaryFile } from "../lib/saveFile";
     import {
-        useInvoicesQuery,
+        useInvoicesListQuery,
         useSaveInvoiceMutation,
         useUpdateInvoiceMutation,
         loadInvoiceItems,
         type Invoice,
         type InvoiceItem as Item,
+        type InvoiceListFilters,
+        type InvoiceListSort,
+        type InvoiceListSortField,
     } from "../lib/queries/invoices";
     import { useClientsQuery } from "../lib/queries/clients";
     import { useProjectsQuery } from "../lib/queries/projects";
@@ -61,7 +63,6 @@
     }
 
     const queryClient = useQueryClient();
-    const invoicesQuery = useInvoicesQuery();
     const clientsQuery = useClientsQuery();
     const projectsQuery = useProjectsQuery();
     const saveMutation = useSaveInvoiceMutation();
@@ -87,30 +88,40 @@
     });
     let items = $state<Item[]>([blankItem(0)]);
 
-    const invoices = $derived($invoicesQuery.data ?? []);
-    const clients = $derived($clientsQuery.data ?? []);
-    const projects = $derived($projectsQuery.data ?? []);
-
-    type SortField = "invoice_number" | "issue_date" | "total";
-    let filters = $state({ status: "", from: "", to: "", clientId: "" });
-    let sort = $state<{ field: SortField; direction: SortDir }>({
+    let filters = $state<InvoiceListFilters>({
+        status: "",
+        from: "",
+        to: "",
+        clientId: "",
+    });
+    let sort = $state<InvoiceListSort>({
         field: "issue_date",
         direction: "desc",
     });
 
-    const filteredSorted = $derived.by(() => {
-        const filtered = invoices.filter(
-            (i) =>
-                (!filters.status || i.status === filters.status) &&
-                (!filters.clientId || i.client_id === filters.clientId) &&
-                inDateRange(i.issue_date, filters.from, filters.to),
-        );
-        const sortKey: (i: (typeof invoices)[number]) => unknown =
-            sort.field === "total"
-                ? (i) => Number(i.total)
-                : (i) => i[sort.field];
-        return [...filtered].sort(compareBy(sortKey, sort.direction));
+    // Push the live filter+sort spec into a Svelte store so the paginated
+    // query hook can include it in the queryKey + re-fetch on change. The
+    // $effect below keeps the store in sync; the initial read is acceptable
+    // here because we immediately update it inside an effect.
+    // svelte-ignore state_referenced_locally
+    const argsStore = writable({
+        filters: $state.snapshot(filters),
+        // svelte-ignore state_referenced_locally
+        sort: $state.snapshot(sort),
     });
+    $effect(() => {
+        argsStore.set({
+            filters: $state.snapshot(filters),
+            sort: $state.snapshot(sort),
+        });
+    });
+
+    const invoicesQuery = useInvoicesListQuery(argsStore);
+    const invoices = $derived(
+        ($invoicesQuery.data?.pages ?? []).flat() as Invoice[],
+    );
+    const clients = $derived($clientsQuery.data ?? []);
+    const projects = $derived($projectsQuery.data ?? []);
 
     const filtersActive = $derived(
         !!filters.status ||
@@ -121,7 +132,7 @@
             sort.direction !== "desc",
     );
 
-    function toggleSort(field: SortField) {
+    function toggleSort(field: InvoiceListSortField) {
         if (sort.field === field) {
             sort = {
                 field,
@@ -429,7 +440,7 @@
                         <tr class="border-b border-vscode-border text-left">
                             <th class="w-6 pb-2">
                                 <SelectableHeader
-                                    ids={filteredSorted.map((i) => i.id)}
+                                    ids={invoices.map((i) => i.id)}
                                     {selected}
                                     onchange={(next) => {
                                         selected = new SvelteSet(next);
@@ -472,7 +483,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {#if filteredSorted.length === 0}
+                        {#if invoices.length === 0}
                             <tr>
                                 <td
                                     colspan="7"
@@ -482,7 +493,7 @@
                                 </td>
                             </tr>
                         {/if}
-                        {#each filteredSorted as inv (inv.id)}
+                        {#each invoices as inv (inv.id)}
                             <tr
                                 class="group border-b border-vscode-border last:border-0"
                             >
@@ -576,6 +587,20 @@
                 </table>
             </div>
         </Card>
+        {#if $invoicesQuery.hasNextPage}
+            <div class="mt-3 flex justify-center">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={$invoicesQuery.isFetchingNextPage}
+                    onclick={() => $invoicesQuery.fetchNextPage()}
+                >
+                    {$invoicesQuery.isFetchingNextPage
+                        ? "Loading…"
+                        : "Load more"}
+                </Button>
+            </div>
+        {/if}
     {/if}
 </div>
 

@@ -1,11 +1,14 @@
 import {
   createQuery,
+  createInfiniteQuery,
   createMutation,
   useQueryClient,
 } from "@tanstack/svelte-query";
+import type { Readable } from "svelte/store";
 import { getSupabase } from "../supabase";
 import { auth } from "../stores/auth.svelte";
 import { qk } from "./keys";
+import { PAGE_SIZE } from "./pagination";
 
 export type Invoice = {
   id: string;
@@ -73,6 +76,71 @@ export function useInvoicesQuery() {
   });
 }
 
+// Filter + sort shape consumed by the paginated list query.
+// All fields optional; empty / undefined means "no filter on this dimension".
+export type InvoiceListFilters = {
+  status?: string;
+  from?: string; // ISO date — issue_date lower bound (inclusive)
+  to?: string; // ISO date — issue_date upper bound (inclusive)
+  clientId?: string;
+};
+export type InvoiceListSortField = "invoice_number" | "issue_date" | "total";
+export type InvoiceListSort = {
+  field: InvoiceListSortField;
+  direction: "asc" | "desc";
+};
+
+// Paginated list query for the /invoices route. The caller passes a Svelte
+// store of `{ filters, sort }` (typically derived from $state inside the
+// route). When that store changes, TanStack sees a new queryKey and refetches
+// from page 0. Returns rows in pages of PAGE_SIZE; `result.data.pages.flat()`
+// gives the running list.
+export function useInvoicesListQuery(
+  argsStore: Readable<{ filters: InvoiceListFilters; sort: InvoiceListSort }>,
+) {
+  return createInfiniteQuery(
+    derivedStore(argsStore, ({ filters, sort }) => ({
+      queryKey: ["invoices", "list", filters, sort] as readonly unknown[],
+      initialPageParam: 0,
+      getNextPageParam: (last: Invoice[], all: Invoice[][]) => {
+        if (last.length < PAGE_SIZE) return undefined;
+        return all.length * PAGE_SIZE;
+      },
+      queryFn: async ({ pageParam }: { pageParam: number }) => {
+        if (!auth.user) return [];
+        let q = getSupabase()
+          .from("invoices")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .is("deleted_at", null)
+          .order(sort.field, { ascending: sort.direction === "asc" })
+          .range(pageParam, pageParam + PAGE_SIZE - 1);
+        if (filters.status) q = q.eq("status", filters.status);
+        if (filters.clientId) q = q.eq("client_id", filters.clientId);
+        if (filters.from) q = q.gte("issue_date", filters.from);
+        if (filters.to) q = q.lte("issue_date", filters.to);
+        const { data, error } = await q;
+        if (error) throw error;
+        return (data as Invoice[]) ?? [];
+      },
+    })),
+  );
+}
+
+// Tiny `derived` shim — re-export-light. We avoid importing svelte/store's
+// `derived` because Svelte 5 in webview prefers $derived. But TanStack
+// `createInfiniteQuery` accepts a Readable<options>, so we need a store
+// adapter. Subscribes to the source and re-projects each update.
+function derivedStore<S, T>(
+  source: Readable<S>,
+  project: (s: S) => T,
+): Readable<T> {
+  return {
+    subscribe: (run, invalidate) =>
+      source.subscribe((s) => run(project(s)), invalidate),
+  };
+}
+
 // Fetch invoice items on demand (e.g. PDF export) — we don't keep them
 // in sync with the invoice list query.
 export async function loadInvoiceItems(
@@ -81,7 +149,37 @@ export async function loadInvoiceItems(
   return fetchInvoiceItems(invoiceId);
 }
 
-type UpdateCtx = { previous: Invoice[] };
+type UpdateCtx = {
+  // Snapshot of every cache entry under qk.invoices() so we can roll back on
+  // error. Each entry can be either a plain Invoice[] (fetch-all) or an
+  // InfiniteData<Invoice[]> (paginated list); we restore whatever shape we
+  // saw.
+  snapshots: [readonly unknown[], unknown][];
+};
+
+// Helper: apply a per-row patch to a cache entry of either shape.
+function patchInvoiceCache(
+  old: unknown,
+  id: string,
+  patch: Partial<Invoice>,
+): unknown {
+  if (!old) return old;
+  if (Array.isArray(old)) {
+    return (old as Invoice[]).map((i) =>
+      i.id === id ? { ...i, ...patch } : i,
+    );
+  }
+  if (typeof old === "object" && old !== null && "pages" in old) {
+    const data = old as { pages: Invoice[][]; pageParams: unknown[] };
+    return {
+      ...data,
+      pages: data.pages.map((page) =>
+        page.map((i) => (i.id === id ? { ...i, ...patch } : i)),
+      ),
+    };
+  }
+  return old;
+}
 
 // Save-invoice (upsert + replace items) — atomic via the `crm_save_invoice`
 // plpgsql function (migrations/0008_invoice_save_fn.sql). The whole
@@ -159,17 +257,22 @@ export function useUpdateInvoiceMutation() {
     },
     onMutate: async (vars) => {
       await client.cancelQueries({ queryKey: qk.invoices() });
-      const previous = client.getQueryData<Invoice[]>(qk.invoices()) ?? [];
-      client.setQueryData<Invoice[]>(qk.invoices(), (old) =>
-        (old ?? []).map((i) =>
-          i.id === vars.id ? { ...i, ...vars.patch } : i,
-        ),
+      // Snapshot every cache entry under ["invoices"] (fetch-all + every
+      // paginated list variant). Each may have a different shape.
+      const snapshots = client.getQueriesData({ queryKey: qk.invoices() }) as [
+        readonly unknown[],
+        unknown,
+      ][];
+      client.setQueriesData({ queryKey: qk.invoices() }, (old) =>
+        patchInvoiceCache(old, vars.id, vars.patch),
       );
-      return { previous };
+      return { snapshots };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx) {
-        client.setQueryData(qk.invoices(), ctx.previous);
+        for (const [key, data] of ctx.snapshots) {
+          client.setQueryData(key, data);
+        }
       }
     },
     onSettled: () => {
