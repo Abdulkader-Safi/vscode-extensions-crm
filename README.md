@@ -78,7 +78,7 @@ Supabase's Management OAuth (`https://api.supabase.com/v1/oauth/*`) — unlike S
 3. The page reads those query params and immediately deep-links to `vscode://abdulkadersafi.vs-crm/oauth-callback?code=…&state=…`.
 4. VS Code's URI handler catches it, the extension exchanges the code for tokens at Supabase's token endpoint, and we're authorized.
 
-The bouncer page has **no backend** and reads no data — it's a 50-line HTML file. The source lives in [`oauth-bouncer/index.html`](./oauth-bouncer/index.html) in this repo and is mirrored to the Pages-hosted repo. You can audit it before authorizing.
+The bouncer page has **no backend** and reads no data — it's a 50-line HTML file. The source lives in [`docs/oauth-callback/index.html`](./docs/oauth-callback/index.html) in this repo and is served by GitHub Pages straight from the same repo's `/docs` folder. You can audit it before authorizing.
 
 This pattern is used by GitHub Desktop, Linear, Raycast, and most other native Supabase integrations — it's the standard solution to OAuth providers that don't trust loopback URIs.
 
