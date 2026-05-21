@@ -10,6 +10,15 @@ import { auth } from "../stores/auth.svelte";
 import { qk } from "./keys";
 import { PAGE_SIZE, derivedStore, patchInCaches } from "./pagination";
 
+export type RecurrenceFreq = "weekly" | "monthly" | "quarterly" | "yearly";
+
+export type InvoiceRecurrence = {
+  freq: RecurrenceFreq;
+  interval: number;
+  until?: string | null; // YYYY-MM-DD
+  count?: number | null;
+};
+
 export type Invoice = {
   id: string;
   invoice_number: string;
@@ -26,6 +35,12 @@ export type Invoice = {
   currency: string;
   notes: string | null;
   paid_at: string | null;
+  // Batch 12 — recurring/template invoices. `is_template = true` rows are
+  // billing templates spawned daily by crm_run_recurring_invoices().
+  is_template?: boolean;
+  parent_invoice_id?: string | null;
+  recurrence?: InvoiceRecurrence | null;
+  next_run_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };

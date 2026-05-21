@@ -88,6 +88,18 @@
     });
     let items = $state<Item[]>([blankItem(0)]);
 
+    // Recurring/template editor state — separate from `form` so toggling
+    // off cleanly nulls the columns rather than leaving stale freq/interval.
+    type RecurringEnd = "never" | "until" | "count";
+    let recurring = $state({
+        enabled: false,
+        freq: "monthly" as "weekly" | "monthly" | "quarterly" | "yearly",
+        interval: "1",
+        endKind: "never" as RecurringEnd,
+        until: "", // YYYY-MM-DD
+        count: "12",
+    });
+
     let filters = $state<InvoiceListFilters>({
         status: "",
         from: "",
@@ -171,6 +183,17 @@
         }),
     );
 
+    function resetRecurring() {
+        recurring = {
+            enabled: false,
+            freq: "monthly",
+            interval: "1",
+            endKind: "never",
+            until: "",
+            count: "12",
+        };
+    }
+
     function openNew() {
         editing = null;
         const num = `INV-${String(invoices.length + 1).padStart(4, "0")}`;
@@ -186,6 +209,7 @@
             notes: "",
         };
         items = [blankItem(0)];
+        resetRecurring();
         open = true;
     }
 
@@ -202,6 +226,23 @@
             discount: String(inv.discount),
             notes: inv.notes ?? "",
         };
+        // Hydrate recurring fields from the row.
+        if (inv.is_template && inv.recurrence) {
+            recurring = {
+                enabled: true,
+                freq: inv.recurrence.freq ?? "monthly",
+                interval: String(inv.recurrence.interval ?? 1),
+                endKind: inv.recurrence.until
+                    ? "until"
+                    : inv.recurrence.count
+                      ? "count"
+                      : "never",
+                until: inv.recurrence.until ?? "",
+                count: String(inv.recurrence.count ?? 12),
+            };
+        } else {
+            resetRecurring();
+        }
         const data = await loadInvoiceItems(inv.id);
         items = data.length ? data : [blankItem(0)];
         open = true;
@@ -241,11 +282,43 @@
         return err.message;
     }
 
+    function buildRecurrenceFields() {
+        if (!recurring.enabled) {
+            return {
+                is_template: false,
+                recurrence: null,
+                next_run_at: null,
+            };
+        }
+        const rrule: import("../lib/queries/invoices").InvoiceRecurrence = {
+            freq: recurring.freq,
+            interval: Math.max(1, Number(recurring.interval) || 1),
+        };
+        if (recurring.endKind === "until" && recurring.until) {
+            rrule.until = recurring.until;
+        } else if (recurring.endKind === "count") {
+            rrule.count = Math.max(1, Number(recurring.count) || 1);
+        }
+        // First child runs from the same issue_date the user just picked.
+        // For a brand-new template the user generally wants the first
+        // invoice to spawn immediately; we set next_run_at = issue_date so
+        // the cron picks it up on the next sweep.
+        const next = form.issue_date
+            ? new Date(`${form.issue_date}T01:00:00Z`).toISOString()
+            : new Date().toISOString();
+        return {
+            is_template: true,
+            recurrence: rrule,
+            next_run_at: next,
+        };
+    }
+
     async function save() {
         if (!form.invoice_number.trim()) {
             toast.error("Invoice number required");
             return;
         }
+        const recurFields = buildRecurrenceFields();
         const payload = {
             invoice_number: form.invoice_number.trim().slice(0, 50),
             status: form.status,
@@ -261,6 +334,7 @@
             currency: profile.currency,
             notes: form.notes.trim() || null,
             paid_at: form.status === "paid" ? new Date().toISOString() : null,
+            ...recurFields,
         };
         try {
             await $saveMutation.mutateAsync({
@@ -516,11 +590,22 @@
                                     {inv.issue_date}
                                 </td>
                                 <td class="py-2">
-                                    <Badge
-                                        tone={statusTone[inv.status] ?? "muted"}
-                                    >
-                                        {inv.status}
-                                    </Badge>
+                                    <div class="flex items-center gap-1.5">
+                                        <Badge
+                                            tone={statusTone[inv.status] ??
+                                                "muted"}
+                                        >
+                                            {inv.status}
+                                        </Badge>
+                                        {#if inv.is_template}
+                                            <span
+                                                title="Recurring template"
+                                                aria-label="Recurring template"
+                                                class="text-[13px]"
+                                                >🔁</span
+                                            >
+                                        {/if}
+                                    </div>
                                 </td>
                                 <td class="py-2 text-right font-semibold">
                                     {formatCurrency(
@@ -739,6 +824,62 @@
         <Field label="Notes">
             <Textarea bind:value={form.notes} rows={2} />
         </Field>
+    </div>
+
+    <!-- Recurring toggle + frequency picker. When enabled, this row becomes
+         a billing template; pg_cron's daily sweep clones it on schedule. -->
+    <div class="mt-4 rounded border border-vscode-border bg-vscode-card-bg p-3">
+        <label class="flex cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" bind:checked={recurring.enabled} />
+            <span>Recurring invoice (template)</span>
+        </label>
+        {#if recurring.enabled}
+            <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                <Field label="Frequency">
+                    <Select bind:value={recurring.freq}>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                    </Select>
+                </Field>
+                <Field label="Every">
+                    <Input
+                        type="number"
+                        min="1"
+                        bind:value={recurring.interval}
+                    />
+                </Field>
+                <Field label="Ends">
+                    <Select bind:value={recurring.endKind}>
+                        <option value="never">Never</option>
+                        <option value="until">On date</option>
+                        <option value="count">After N invoices</option>
+                    </Select>
+                </Field>
+                {#if recurring.endKind === "until"}
+                    <Field label="Until">
+                        <Input type="date" bind:value={recurring.until} />
+                    </Field>
+                {:else if recurring.endKind === "count"}
+                    <Field label="Number of invoices">
+                        <Input
+                            type="number"
+                            min="1"
+                            bind:value={recurring.count}
+                        />
+                    </Field>
+                {/if}
+            </div>
+            <p class="mt-2 text-xs text-vscode-description">
+                The first child invoice spawns on the issue date you picked
+                above, then every {recurring.interval}
+                {recurring.freq}.
+                Requires <code>pg_cron</code> enabled in Supabase Dashboard →
+                Database → Extensions; templates can be edited or deleted
+                anytime to pause/stop billing.
+            </p>
+        {/if}
     </div>
 
     {#snippet footer()}

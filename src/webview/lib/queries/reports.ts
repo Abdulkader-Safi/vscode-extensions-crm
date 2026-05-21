@@ -14,6 +14,9 @@ export type ReportInvoice = {
   project_id: string | null;
   invoice_number: string;
   currency: string;
+  // Batch 12 — exclude templates from cash-flow projections; their cron-
+  // spawned children show up as regular outstanding invoices.
+  is_template?: boolean | null;
 };
 export type ReportExpense = {
   id: string;

@@ -181,9 +181,10 @@
 
     // Cash-flow projection: outstanding invoices summed by their `due_date`
     // month for the next 6 months, plus a "projected" series that fills any
-    // future month with the trailing-3-month paid average. Once recurring
-    // invoices ship (Batch 7) the projection should subtract recurring
-    // template months; for now it's a smoothed-baseline forecast.
+    // future month with the trailing-3-month paid average. Recurring
+    // templates (is_template=true) are skipped — they're not billed
+    // themselves; their cron-spawned children appear as regular invoices
+    // and show up under "outstanding" automatically once they exist.
     const cashFlow = $derived.by(() => {
         const months = Array.from({ length: 6 }, (_, idx) => {
             const d = new Date();
@@ -194,7 +195,7 @@
         const outstanding: Record<string, number> = {};
         months.forEach((k) => (outstanding[k] = 0));
         for (const i of invoices) {
-            if (i.status === "paid" || !i.due_date) {
+            if (i.is_template || i.status === "paid" || !i.due_date) {
                 continue;
             }
             const k = i.due_date.slice(0, 7);
