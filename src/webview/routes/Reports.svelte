@@ -10,6 +10,8 @@
     import { formatCurrency } from "../lib/utils";
     import { useReportsQuery } from "../lib/queries/reports";
     import { convertToBase } from "../lib/fx";
+    import { saveTextFile } from "../lib/saveFile";
+    import { toast } from "svelte-sonner";
     import { _ } from "../i18n";
 
     const reportsQuery = useReportsQuery();
@@ -337,7 +339,7 @@
         },
     });
 
-    function exportCsv() {
+    async function exportCsv() {
         const rows: string[][] = [["Type", "Date", "Description", "Amount"]];
         for (const i of invoices) {
             rows.push([
@@ -360,13 +362,18 @@
                 r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
             )
             .join("\n");
-        const blob = new Blob([csv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "vs-crm-export.csv";
-        a.click();
-        URL.revokeObjectURL(url);
+        try {
+            const result = await saveTextFile(
+                "vs-crm-export.csv",
+                "text/csv",
+                csv,
+            );
+            if (result.saved) {
+                toast.success("CSV saved");
+            }
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 </script>
 

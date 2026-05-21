@@ -1,4 +1,3 @@
-import { splitSqlStatements } from "./sqlSplitter";
 import { MIGRATIONS, type Migration } from "./migrations";
 import type {
   MigrationProgress,
@@ -96,13 +95,15 @@ export async function runMigrations(
     });
 
     try {
-      const stmts = splitSqlStatements(mig.sql);
-      for (const s of stmts) {
-        await rpcExecSql(cfg, s);
-      }
-      // The tracking table is created in 0001 itself, so by the time the
-      // first migration's statements have all run we can record it. Every
-      // subsequent migration records itself the same way.
+      // Send the entire migration body as a single _vscrm_exec_sql call.
+      // PostgREST wraps each request in a transaction, and EXECUTE inside the
+      // plpgsql helper runs all statements in that transaction — so any
+      // failure mid-migration rolls back the whole file. We can't add
+      // explicit BEGIN/COMMIT inside the helper (plpgsql forbids transaction
+      // control), but we don't need to: the implicit transaction is enough.
+      await rpcExecSql(cfg, mig.sql);
+      // Version-pin runs as a separate call so its own atomic insert is
+      // independent of the migration body's transaction.
       await rpcExecSql(
         cfg,
         `INSERT INTO public._vscrm_migrations(name) VALUES (${pgQuote(

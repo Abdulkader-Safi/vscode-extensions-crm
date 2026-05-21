@@ -8,6 +8,7 @@ import invoiceUniqueSql from "../../../migrations/0004_invoice_unique.sql";
 import storageSql from "../../../migrations/0005_storage.sql";
 import softDeleteSql from "../../../migrations/0006_soft_delete.sql";
 import profileTzFxSql from "../../../migrations/0007_profile_timezone_fx.sql";
+import invoiceSaveFnSql from "../../../migrations/0008_invoice_save_fn.sql";
 
 export type Migration = { name: string; sql: string };
 
@@ -18,4 +19,5 @@ export const MIGRATIONS: Migration[] = [
   { name: "0005_storage.sql", sql: storageSql },
   { name: "0006_soft_delete.sql", sql: softDeleteSql },
   { name: "0007_profile_timezone_fx.sql", sql: profileTzFxSql },
+  { name: "0008_invoice_save_fn.sql", sql: invoiceSaveFnSql },
 ];

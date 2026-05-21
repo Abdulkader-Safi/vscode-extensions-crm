@@ -85,35 +85,35 @@ The plan file has implementation-ready details for these (`/Users/safi/.claude/p
 
 ### Correctness
 
-- [ ] Wrap each migration's statements in `BEGIN; … COMMIT;`
-- [ ] Add `IF NOT EXISTS` / `OR REPLACE` to every `CREATE` in migrations
+- [x] Wrap each migration's statements atomically — Batch 8: orchestrator now sends each migration body as one `_vscrm_exec_sql` call. PostgREST wraps the call in a transaction; `EXECUTE` inside the plpgsql helper runs all statements in that transaction, so any mid-migration failure rolls back the whole file. Explicit BEGIN/COMMIT can't go inside the helper (plpgsql forbids transaction control), but the implicit transaction is enough. `splitSqlStatements` + tests deleted as the orchestrator no longer chunks.
+- [x] Add `IF NOT EXISTS` / `OR REPLACE` to every `CREATE` in migrations — Batch 8: `0001_schema.sql` now uses `CREATE TABLE IF NOT EXISTS`, `DROP POLICY IF EXISTS … ; CREATE POLICY …`, `DROP TRIGGER IF EXISTS … ; CREATE TRIGGER …`, `CREATE INDEX IF NOT EXISTS`. `0004_invoice_unique.sql` wraps `ADD CONSTRAINT` in a `pg_constraint` existence check.
 - [x] Move `CREATE TABLE IF NOT EXISTS public._vscrm_migrations(...)` to top of `0001_schema.sql`
 - [x] Delete `migrations/0003_vsccrm_tracking.sql`
 - [x] Remove the special-case branches for `0003` in `runMigrations()`
 - [x] ~~Move `clearServiceRoleKey()` into the orchestrator success path (don't wait for `boot/finalize`)~~ — reversed: we no longer clear the service-role key at all. It persists in SecretStorage so `applyPendingMigrations` can run on activate. Tradeoff: persistent elevated key vs. zero-friction upgrades.
-- [ ] Wrap invoice + line-item save in a Postgres function (or compensate on failure)
+- [x] Wrap invoice + line-item save in a Postgres function — Batch 8: `migrations/0008_invoice_save_fn.sql` adds `crm_save_invoice(p_invoice_id UUID, p_invoice JSONB, p_items JSONB) RETURNS UUID`. Replaces the 3-step Supabase mutation in `useSaveInvoiceMutation()` with one rpc call. SECURITY INVOKER + RLS enforces ownership.
 - [x] Add `UNIQUE(user_id, invoice_number)` constraint in a new migration
-- [ ] Surface a friendly "duplicate invoice number" error in the UI
+- [x] Surface a friendly "duplicate invoice number" error in the UI — `Invoices.svelte:222–230` `invoiceSaveErrorMessage()` detects Postgres `23505` and shows "Invoice number already in use — pick another." Works the same with the new rpc-based mutation since supabase-js preserves `error.code`.
 - [x] Fix Expenses "This month" calc — use current `YYYY-MM` key, not `monthlyMap[0]`
 
 ### UX / inconsistency
 
-- [ ] Test CSV download (Reports) in Extension Dev Host — verify CSP allows `blob:`
-- [ ] Test PDF download (Invoices) in Extension Dev Host — verify CSP allows `blob:`
-- [ ] If `blob:` blocked, send bytes via IPC and save with `vscode.workspace.fs.writeFile` + `showSaveDialog`
-- [ ] Build a `<ConfirmDialog>` component on top of `<Dialog>`
+- [x] ~~Test CSV download (Reports) in Extension Dev Host — verify CSP allows `blob:`~~ — superseded by Batch 8: CSV no longer uses `blob:`. Goes through `files/save-file` IPC → `showSaveDialog` + `workspace.fs.writeFile`. CSP-independent.
+- [x] ~~Test PDF download (Invoices) in Extension Dev Host — verify CSP allows `blob:`~~ — superseded: PDF takes the same IPC path (`jsPDF.output('arraybuffer')` → base64 → host writes file).
+- [x] Send bytes via IPC and save with `vscode.workspace.fs.writeFile` + `showSaveDialog` — Batch 8: new `files/save-file` request type in `src/shared/messages.ts`, handler in `WebviewProvider.ts`, webview helpers `saveTextFile` + `saveBinaryFile` in `src/webview/lib/saveFile.ts`. Wired into Reports CSV export and Invoices PDF export (both row-level and from inside the preview dialog).
+- [x] Build a `<ConfirmDialog>` component on top of `<Dialog>` — already shipped pre-Batch-8: `src/webview/lib/components/ui/ConfirmDialog.svelte` + imperative `confirm()` helper at `src/webview/lib/confirm.svelte.ts`. Adopted in Trash/Clients/Invoices/Expenses delete flows. TODO entry was stale.
 - [x] Replace `confirm()` in Clients delete
 - [x] Replace `confirm()` in Projects delete
 - [x] Replace `confirm()` in Tasks delete
 - [x] Replace `confirm()` in Invoices delete
 - [x] Replace `confirm()` in Expenses delete
 - [x] Replace `confirm()` in Leads delete (bonus)
-- [ ] Add a "I added the redirect URI to Supabase" checkbox before completing onboarding
+- [x] Add a "I added the redirect URI to Supabase" checkbox before completing onboarding — Batch 9: welcome step in `Onboarding.svelte` now gates the "Get started" button on a `redirectUriAcknowledged` checkbox right beneath the URI display row. State persists across `Back` from later steps.
 
 ### Cleanup
 
 - [x] Move bootstrap snippet to `src/shared/bootstrapSnippet.ts`
-- [ ] Import shared snippet from `src/extension/bootstrap/migrations.ts`
+- [x] ~~Import shared snippet from `src/extension/bootstrap/migrations.ts`~~ — stale: `migrations.ts` never consumed the snippet (it only loads `.sql` migration files via esbuild's text loader). The snippet is used only by the onboarding UI, which already imports from `src/shared/bootstrapSnippet.ts`. The file's header comment (lines 3-4) already documents this.
 - [x] Import shared snippet from `src/webview/onboarding/Onboarding.svelte`
 - [x] Delete `src/webview/onboarding/bootstrapSnippet.ts`
 - [x] Remove unused `BOOTSTRAP_FUNCTION_SQL` import in `WebviewProvider.ts`
@@ -128,8 +128,8 @@ The plan file has implementation-ready details for these (`/Users/safi/.claude/p
 - [x] Fix self-closing `<div />` in `Onboarding.svelte`
 - [x] Add `tabindex="-1"` to `<div role="dialog">` in `Dialog.svelte`
 - [x] Add a keyboard handler for backdrop click in `Dialog.svelte`
-- [ ] Document why `0002_revoke.sql` revokes execute on trigger-only functions (or remove)
-- [ ] Document why `splitSqlStatements` handles nested dollar-quotes (or simplify)
+- [x] Document why `0002_revoke.sql` revokes execute on trigger-only functions (or remove) — Batch 9: file now opens with a comment block explaining defense-in-depth rationale (trigger-only functions; `handle_new_user` is SECURITY DEFINER and writes to `profiles`; REVOKE is idempotent so safe to re-run).
+- [x] ~~Document why `splitSqlStatements` handles nested dollar-quotes (or simplify)~~ — stale: file deleted in Batch 8 (orchestrator now sends each migration body as one EXECUTE; no client-side splitting needed).
 
 ## Quick wins (each under 30 min) — all done
 

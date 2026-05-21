@@ -30,6 +30,7 @@
         renderInvoicePdf,
         type InvoicePreview,
     } from "../lib/invoicePreview";
+    import { saveBinaryFile } from "../lib/saveFile";
     import {
         useInvoicesQuery,
         useSaveInvoiceMutation,
@@ -323,20 +324,34 @@
         }
     }
 
+    async function savePdf(p: InvoicePreview) {
+        const pdf = renderInvoicePdf(p);
+        const buf = pdf.output("arraybuffer") as ArrayBuffer;
+        await saveBinaryFile(
+            `${p.invoice.invoice_number}.pdf`,
+            "application/pdf",
+            buf,
+        );
+    }
+
     async function exportPdf(inv: Invoice) {
         try {
             const p = await loadInvoicePreview(inv, clients, profile.profile);
-            renderInvoicePdf(p).save(`${inv.invoice_number}.pdf`);
+            await savePdf(p);
         } catch (e) {
             toast.error((e as Error).message);
         }
     }
 
-    function downloadFromPreview() {
+    async function downloadFromPreview() {
         if (!preview) {
             return;
         }
-        renderInvoicePdf(preview).save(`${preview.invoice.invoice_number}.pdf`);
+        try {
+            await savePdf(preview);
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 
     function editFromPreview() {

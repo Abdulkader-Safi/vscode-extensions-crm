@@ -48,6 +48,7 @@
     let appliedSummary = $state<RunMigrationsResult | null>(null);
 
     let redirectUri = $state("");
+    let redirectUriAcknowledged = $state(false);
 
     let unsubProgress: (() => void) | null = null;
 
@@ -241,9 +242,26 @@
                             <Copy class="h-3.5 w-3.5" />
                         </button>
                     </div>
+                    <label
+                        class="flex cursor-pointer items-start gap-2 text-xs text-vscode-description"
+                    >
+                        <input
+                            type="checkbox"
+                            class="mt-0.5"
+                            bind:checked={redirectUriAcknowledged}
+                        />
+                        <span>
+                            I've added this redirect URI to my Supabase
+                            project's <em
+                                >Authentication → URL Configuration → Redirect
+                                URLs</em
+                            >.
+                        </span>
+                    </label>
                     <div class="flex justify-end pt-2">
                         <Button
                             variant="brand"
+                            disabled={!redirectUriAcknowledged}
                             onclick={() => (step = "paste")}
                         >
                             Get started

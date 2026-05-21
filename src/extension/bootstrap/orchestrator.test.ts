@@ -75,8 +75,8 @@ describe("runMigrations", () => {
 
     expect(result.applied).toEqual(["test_001.sql", "test_002.sql"]);
     expect(result.skipped).toEqual([]);
-    // 1 GET + (1 stmt + 1 insert) + (2 stmts + 1 insert) = 6 calls
-    expect(calls).toHaveLength(6);
+    // 1 GET + (1 body + 1 insert) + (1 body + 1 insert) = 5 calls
+    expect(calls).toHaveLength(5);
     const posts = calls.slice(1);
     expect(posts.every((c) => c.init?.method === "POST")).toBe(true);
     expect(posts.every((c) => c.url.endsWith("/rpc/_vscrm_exec_sql"))).toBe(
@@ -98,8 +98,8 @@ describe("runMigrations", () => {
 
     expect(result.applied).toEqual(["test_002.sql"]);
     expect(result.skipped).toEqual(["test_001.sql"]);
-    // 1 GET + (2 stmts + 1 insert) for migration 2 = 4 calls
-    expect(calls).toHaveLength(4);
+    // 1 GET + (1 body + 1 insert) for migration 2 = 3 calls
+    expect(calls).toHaveLength(3);
     const m1 = progress.filter((p) => p.name === "test_001.sql");
     const m2 = progress.filter((p) => p.name === "test_002.sql");
     expect(m1.map((p) => p.status)).toEqual(["done"]);
@@ -111,7 +111,7 @@ describe("runMigrations", () => {
       if (call.url.includes("/_vscrm_migrations?")) {
         return new Response(null, { status: 404 });
       }
-      // first POST is migration 1's single statement — make it fail
+      // first POST is migration 1's body — make it fail
       if (idx === 1) {
         return new Response("permission denied", { status: 500 });
       }

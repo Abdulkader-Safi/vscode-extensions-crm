@@ -185,6 +185,34 @@ export class CrmWebviewProvider {
         await vscode.env.clipboard.writeText(msg.payload.text);
         return { ok: true };
       }
+      case "files/save-file": {
+        const { filename, mimeType, bytes } = msg.payload;
+        const ext = filename.includes(".")
+          ? filename.slice(filename.lastIndexOf(".") + 1)
+          : "";
+        const filters: Record<string, string[]> = {};
+        if (ext) {
+          filters[mimeType || ext.toUpperCase()] = [ext];
+        }
+        filters["All Files"] = ["*"];
+        const defaultUri = vscode.Uri.file(
+          (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "") +
+            "/" +
+            filename,
+        );
+        const target = await vscode.window.showSaveDialog({
+          defaultUri,
+          filters,
+        });
+        if (!target) {
+          return { saved: false };
+        }
+        await vscode.workspace.fs.writeFile(
+          target,
+          Buffer.from(bytes, "base64"),
+        );
+        return { saved: true, path: target.fsPath };
+      }
       default: {
         const _exhaustive: never = msg;
         void _exhaustive;
@@ -235,7 +263,7 @@ export class CrmWebviewProvider {
       `script-src 'nonce-${nonce}'`,
       `font-src ${webview.cspSource}`,
       `img-src ${webview.cspSource} data: blob: https:`,
-      `connect-src https://*.supabase.co wss://*.supabase.co`,
+      `connect-src ${webview.cspSource} https://*.supabase.co wss://*.supabase.co`,
     ].join("; ");
 
     return `<!DOCTYPE html>

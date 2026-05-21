@@ -83,6 +83,19 @@ type NotifyPayload = {
   message: string;
 };
 
+// ---- File save (webview asks host to write bytes via showSaveDialog) ----
+export type SaveFilePayload = {
+  filename: string;
+  mimeType: string;
+  // Base64-encoded bytes. Webview CSP blocks blob: downloads, so binary data
+  // is shipped over the IPC bus and written via vscode.workspace.fs.
+  bytes: string;
+};
+
+export type SaveFileResult =
+  | { saved: true; path: string }
+  | { saved: false };
+
 // ---- All requests (webview -> host) ----
 export type WebviewRequest =
   | RequestEnvelope<"boot/request-config", undefined>
@@ -99,7 +112,8 @@ export type WebviewRequest =
   | RequestEnvelope<"secrets/set", SecretSetPayload>
   | RequestEnvelope<"secrets/delete", SecretDeletePayload>
   | RequestEnvelope<"notify", NotifyPayload>
-  | RequestEnvelope<"copy", { text: string }>;
+  | RequestEnvelope<"copy", { text: string }>
+  | RequestEnvelope<"files/save-file", SaveFilePayload>;
 
 // ---- All events (host -> webview) ----
 export type HostEvent =

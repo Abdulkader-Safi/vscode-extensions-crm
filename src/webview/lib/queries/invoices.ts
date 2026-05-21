@@ -83,9 +83,10 @@ export async function loadInvoiceItems(
 
 type UpdateCtx = { previous: Invoice[] };
 
-// Save-invoice (upsert + replace items) — invoice + line items committed
-// together. Failure mode: items insert is best-effort; UI shows server error
-// and refetches. Wrapping in a Postgres function is a TODO follow-up.
+// Save-invoice (upsert + replace items) — atomic via the `crm_save_invoice`
+// plpgsql function (migrations/0008_invoice_save_fn.sql). The whole
+// invoice-row + line-items replacement runs in a single Postgres transaction,
+// so a mid-save failure can't leave an orphaned invoice or stale items.
 export function useSaveInvoiceMutation() {
   const client = useQueryClient();
   return createMutation<
@@ -108,52 +109,24 @@ export function useSaveInvoiceMutation() {
       if (!auth.user) {
         throw new Error("Not authenticated");
       }
-      const supa = getSupabase();
-      const fullPayload = { ...vars.payload, user_id: auth.user.id };
-      let invId = vars.editingId;
-      if (vars.editingId) {
-        const { error } = await supa
-          .from("invoices")
-          .update(fullPayload)
-          .eq("id", vars.editingId);
-        if (error) {
-          throw error;
-        }
-        await supa
-          .from("invoice_items")
-          .delete()
-          .eq("invoice_id", vars.editingId);
-      } else {
-        const { data, error } = await supa
-          .from("invoices")
-          .insert(fullPayload)
-          .select()
-          .single();
-        if (error) {
-          throw error;
-        }
-        invId = data.id;
+      const items = vars.items
+        .filter((i) => i.description.trim())
+        .map((i, idx) => ({
+          description: i.description.slice(0, 500),
+          quantity: Number(i.quantity),
+          unit_price: Number(i.unit_price),
+          total: Number(i.quantity) * Number(i.unit_price),
+          position: idx,
+        }));
+      const { data, error } = await getSupabase().rpc("crm_save_invoice", {
+        p_invoice_id: vars.editingId,
+        p_invoice: vars.payload,
+        p_items: items,
+      });
+      if (error) {
+        throw error;
       }
-      if (invId) {
-        const rows = vars.items
-          .filter((i) => i.description.trim())
-          .map((i, idx) => ({
-            user_id: auth.user!.id,
-            invoice_id: invId,
-            description: i.description.slice(0, 500),
-            quantity: Number(i.quantity),
-            unit_price: Number(i.unit_price),
-            total: Number(i.quantity) * Number(i.unit_price),
-            position: idx,
-          }));
-        if (rows.length) {
-          const { error } = await supa.from("invoice_items").insert(rows);
-          if (error) {
-            throw error;
-          }
-        }
-      }
-      return invId!;
+      return data as string;
     },
     onSettled: (invId) => {
       client.invalidateQueries({ queryKey: qk.invoices() });

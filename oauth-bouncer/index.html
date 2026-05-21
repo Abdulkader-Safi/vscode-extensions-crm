@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>vs-crm — Returning to VS Code…</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <meta name="robots" content="noindex" />
+        <style>
+            :root {
+                color-scheme: dark;
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+            }
+            body {
+                font:
+                    14px -apple-system,
+                    system-ui,
+                    "Segoe UI",
+                    sans-serif;
+                background: #0f0f12;
+                color: #e9e9ed;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .card {
+                max-width: 480px;
+                padding: 40px;
+                text-align: center;
+                border: 1px solid #2a2a31;
+                border-radius: 12px;
+                background: #15151a;
+            }
+            h1 {
+                font-size: 20px;
+                margin: 0 0 12px;
+                font-weight: 600;
+            }
+            h1.err {
+                color: #ff6b6b;
+            }
+            p {
+                color: #9aa0a6;
+                line-height: 1.55;
+                margin: 8px 0;
+            }
+            a.btn {
+                display: inline-block;
+                margin-top: 16px;
+                padding: 10px 18px;
+                background: #6b46f1;
+                color: #fff;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: 500;
+            }
+            a.btn:hover {
+                background: #7c5cf5;
+            }
+            code {
+                background: #23232b;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 12px;
+                color: #ffb3b3;
+                word-break: break-all;
+            }
+            .hidden {
+                display: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1 id="title">Returning to VS Code…</h1>
+            <p id="subtitle">
+                If VS Code doesn't open automatically, click below.
+            </p>
+            <a class="btn hidden" id="manual" href="#">Open VS Code</a>
+            <p
+                id="fallback"
+                class="hidden"
+                style="font-size: 12px; margin-top: 24px"
+            >
+                If nothing happens, copy this URL into your browser:<br />
+                <code id="vscode-url"></code>
+            </p>
+        </div>
+
+        <script>
+            // Build the vscode:// deep link from the OAuth params Supabase passed us.
+            // EXTENSION_ID is the publisher.name of the vs-crm extension; keep this
+            // in sync with package.json. Path matches CrmUriHandler's /oauth-callback.
+            var EXTENSION_ID = "abdulkadersafi.vs-crm";
+
+            var params = new URLSearchParams(location.search);
+            var code = params.get("code");
+            var state = params.get("state");
+            var error = params.get("error_description") || params.get("error");
+
+            var title = document.getElementById("title");
+            var subtitle = document.getElementById("subtitle");
+            var manual = document.getElementById("manual");
+            var fallback = document.getElementById("fallback");
+            var urlNode = document.getElementById("vscode-url");
+
+            if (!code && !error) {
+                // Page opened directly (no OAuth params). Show explainer instead of redirecting nowhere.
+                title.textContent = "Nothing to do here";
+                title.classList.add("err");
+                subtitle.textContent =
+                    "This page is the OAuth callback for vs-crm. It only does anything when Supabase redirects you here after authorization.";
+                manual.classList.add("hidden");
+                fallback.classList.add("hidden");
+            } else {
+                var out = new URLSearchParams();
+                if (error) {
+                    out.set("error_description", error);
+                    if (state) out.set("state", state);
+                } else {
+                    if (code) out.set("code", code);
+                    if (state) out.set("state", state);
+                }
+                var vscodeUrl =
+                    "vscode://" +
+                    EXTENSION_ID +
+                    "/oauth-callback?" +
+                    out.toString();
+
+                manual.href = vscodeUrl;
+                manual.classList.remove("hidden");
+                urlNode.textContent = vscodeUrl;
+                fallback.classList.remove("hidden");
+
+                // Auto-redirect. Some browsers require a user gesture; the "Open VS Code"
+                // button is the fallback.
+                setTimeout(function () {
+                    location.href = vscodeUrl;
+                }, 50);
+            }
+        </script>
+    </body>
+</html>
