@@ -16,6 +16,7 @@ import leadsClientLinkSql from "../../../migrations/0012_leads_client_link.sql";
 import commLogsLeadSql from "../../../migrations/0013_comm_logs_lead.sql";
 import taskPositionSql from "../../../migrations/0014_task_position.sql";
 import commLogsTaskSql from "../../../migrations/0015_comm_logs_task.sql";
+import taskClientLinkSql from "../../../migrations/0016_task_client_link.sql";
 
 export type Migration = { name: string; sql: string };
 
@@ -37,4 +38,5 @@ export const MIGRATIONS: Migration[] = [
   { name: "0013_comm_logs_lead.sql", sql: commLogsLeadSql },
   { name: "0014_task_position.sql", sql: taskPositionSql },
   { name: "0015_comm_logs_task.sql", sql: commLogsTaskSql },
+  { name: "0016_task_client_link.sql", sql: taskClientLinkSql },
 ];

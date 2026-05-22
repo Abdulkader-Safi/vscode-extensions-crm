@@ -31,6 +31,8 @@ export type Task = {
   category?: string | null;
   // Batch 16 — explicit subtask ordering (NULL for unordered/top-level rows).
   position?: number | null;
+  // Batch 16 — optional direct client pin (independent of project.client_id).
+  client_id?: string | null;
   created_at?: string;
   updated_at?: string;
 };

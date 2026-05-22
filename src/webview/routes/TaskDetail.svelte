@@ -32,6 +32,7 @@
         type Task,
     } from "../lib/queries/tasks";
     import { useProjectsQuery } from "../lib/queries/projects";
+    import { useClientsQuery } from "../lib/queries/clients";
     import {
         useTaskCommunicationLogsQuery,
         useCreateTaskCommunicationLogMutation,
@@ -50,6 +51,7 @@
     const subtasksQuery = useSubtasksQuery(idStore);
     const categoriesQuery = useTaskCategoriesQuery();
     const projectsQuery = useProjectsQuery();
+    const clientsQuery = useClientsQuery();
     const updateMutation = useUpdateTaskMutation();
     const createMutation = useCreateTaskMutation();
     const reorderMutation = useReorderSubtasksMutation();
@@ -67,16 +69,25 @@
     const task = $derived($taskQuery.data ?? null);
     const categories = $derived($categoriesQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
+    const clients = $derived($clientsQuery.data ?? []);
     const logs = $derived($logsQuery.data ?? []);
+
+    // Client implied by the linked project — shown as a hint when no direct
+    // client is pinned, so the user knows the task already resolves to one.
+    const projectClientName = $derived.by(() => {
+        const projectClientId = projects.find(
+            (p) => p.id === task?.project_id,
+        )?.client_id;
+        return projectClientId
+            ? (clients.find((c) => c.id === projectClientId)?.name ?? null)
+            : null;
+    });
 
     let logForm = $state({ type: "note", title: "", content: "" });
 
-    // Local optimistic order for drag-and-drop — synced from query data,
-    // mutated by drag, persisted on finalize.
-    let subtasks = $state<Task[]>([]);
-    $effect(() => {
-        subtasks = $subtasksQuery.data ?? [];
-    });
+    // Writable derived: re-syncs from query data, but drag handlers reassign
+    // it locally for optimistic ordering; persisted on finalize.
+    let subtasks = $derived($subtasksQuery.data ?? []);
 
     let newSubtask = $state("");
 
@@ -265,7 +276,7 @@
                             {/each}
                         </datalist>
                     </Field>
-                    <Field class="sm:col-span-2" label="Project">
+                    <Field label="Project">
                         <Select
                             value={task.project_id ?? "none"}
                             onchange={(e: Event) => {
@@ -278,6 +289,25 @@
                                 <option value={p.id}>{p.name}</option>
                             {/each}
                         </Select>
+                    </Field>
+                    <Field label="Client">
+                        <Select
+                            value={task.client_id ?? "none"}
+                            onchange={(e: Event) => {
+                                const v = (e.target as HTMLSelectElement).value;
+                                patch({ client_id: v === "none" ? null : v });
+                            }}
+                        >
+                            <option value="none">No client</option>
+                            {#each clients as c (c.id)}
+                                <option value={c.id}>{c.name}</option>
+                            {/each}
+                        </Select>
+                        {#if !task.client_id && projectClientName}
+                            <p class="mt-1 text-[11px] text-vscode-description">
+                                Via project: {projectClientName}
+                            </p>
+                        {/if}
                     </Field>
                 </div>
             </Card>
