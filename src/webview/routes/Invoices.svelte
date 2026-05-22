@@ -3,7 +3,15 @@
     import { SvelteSet } from "svelte/reactivity";
     import { writable } from "svelte/store";
     import { useQueryClient } from "@tanstack/svelte-query";
-    import { Plus, Trash2, Pencil, FileDown, Eye, Check } from "lucide-svelte";
+    import {
+        Plus,
+        Trash2,
+        Pencil,
+        FileDown,
+        Eye,
+        Check,
+        Mail,
+    } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -31,9 +39,9 @@
     } from "../lib/invoicePreview";
     import { saveBinaryFile } from "../lib/saveFile";
     import {
-        useInvoicesListQuery,
         useSaveInvoiceMutation,
         useUpdateInvoiceMutation,
+        useSendInvoiceMutation,
         loadInvoiceItems,
         type Invoice,
         type InvoiceItem as Item,
@@ -41,6 +49,7 @@
         type InvoiceListSort,
         type InvoiceListSortField,
     } from "../lib/queries/invoices";
+    import { useInvoicesListQuery } from "../lib/queries/useInvoicesListQuery";
     import { useClientsQuery } from "../lib/queries/clients";
     import { useProjectsQuery } from "../lib/queries/projects";
 
@@ -67,10 +76,20 @@
     const projectsQuery = useProjectsQuery();
     const saveMutation = useSaveInvoiceMutation();
     const updateMutation = useUpdateInvoiceMutation();
+    const sendMutation = useSendInvoiceMutation();
 
     let selected = $state(new SvelteSet<string>());
     let previewOpen = $state(false);
     let preview = $state<InvoicePreview | null>(null);
+
+    // Email dialog state. `target` is the invoice we're about to email;
+    // null means the dialog is hidden.
+    let emailDialog = $state<{
+        target: Invoice;
+        recipient: string;
+        subject: string;
+        body: string;
+    } | null>(null);
 
     let open = $state(false);
     let editing = $state<Invoice | null>(null);
@@ -447,6 +466,63 @@
         previewOpen = false;
         openEdit(inv);
     }
+
+    // Email flow (Batch 13). Open dialog with client email pre-filled.
+    function openEmail(inv: Invoice) {
+        const client = clients.find((c) => c.id === inv.client_id);
+        emailDialog = {
+            target: inv,
+            recipient: client?.email ?? "",
+            subject: `Invoice ${inv.invoice_number}`,
+            body: "",
+        };
+    }
+
+    async function sendEmail() {
+        if (!emailDialog) return;
+        const { target, recipient, subject, body } = emailDialog;
+        if (!recipient.trim()) {
+            toast.error("Recipient email is required");
+            return;
+        }
+        try {
+            const p = await loadInvoicePreview(
+                target,
+                clients,
+                profile.profile,
+            );
+            const pdf = renderInvoicePdf(p);
+            const buf = pdf.output("arraybuffer") as ArrayBuffer;
+            await $sendMutation.mutateAsync({
+                invoiceId: target.id,
+                pdfBytes: buf,
+                recipient: recipient.trim(),
+                subject: subject.trim() || undefined,
+                body: body.trim() || undefined,
+            });
+            toast.success(`Sent to ${recipient.trim()}`);
+            emailDialog = null;
+            // If the invoice was a draft, flip it to "sent" — most users
+            // would do this manually otherwise.
+            if (target.status === "draft") {
+                $updateMutation.mutate({
+                    id: target.id,
+                    patch: { status: "sent" },
+                });
+            }
+        } catch (e) {
+            const msg = (e as Error).message;
+            // Specific friendly text when the Edge Function isn't deployed
+            // (supabase-js returns 404 / "Failed to send a request to the Edge Function").
+            if (/not configured|404|Failed to send/i.test(msg)) {
+                toast.error(
+                    "Email not configured — deploy supabase/functions/send-invoice and set RESEND_API_KEY. See README.",
+                );
+            } else {
+                toast.error(msg);
+            }
+        }
+    }
 </script>
 
 <div class="p-6">
@@ -601,8 +677,7 @@
                                             <span
                                                 title="Recurring template"
                                                 aria-label="Recurring template"
-                                                class="text-[13px]"
-                                                >🔁</span
+                                                class="text-[13px]">🔁</span
                                             >
                                         {/if}
                                     </div>
@@ -646,6 +721,15 @@
                                             onclick={() => exportPdf(inv)}
                                         >
                                             <FileDown class="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            aria-label="Email invoice"
+                                            title="Email invoice"
+                                            onclick={() => openEmail(inv)}
+                                        >
+                                            <Mail class="h-3.5 w-3.5" />
                                         </Button>
                                         <Button
                                             size="icon"
@@ -708,6 +792,50 @@
     onDownload={downloadFromPreview}
     onEdit={editFromPreview}
 />
+
+{#if emailDialog}
+    <Dialog
+        open
+        title="Email invoice {emailDialog.target.invoice_number}"
+        size="md"
+        onClose={() => (emailDialog = null)}
+    >
+        <div class="space-y-3">
+            <Field label="To" required>
+                <Input
+                    type="email"
+                    bind:value={emailDialog.recipient}
+                    placeholder="client@example.com"
+                />
+            </Field>
+            <Field label="Subject">
+                <Input bind:value={emailDialog.subject} />
+            </Field>
+            <Field label="Message (optional)">
+                <Textarea bind:value={emailDialog.body} rows={4} />
+            </Field>
+            <p class="text-xs text-vscode-description">
+                The PDF is generated locally and attached as a secure download
+                link (valid 24h). Requires the <code>send-invoice</code> Edge
+                Function deployed with a Resend API key — see the function's
+                README.
+            </p>
+        </div>
+        {#snippet footer()}
+            <Button variant="ghost" onclick={() => (emailDialog = null)}>
+                Cancel
+            </Button>
+            <Button
+                variant="brand"
+                loading={$sendMutation.isPending}
+                disabled={$sendMutation.isPending}
+                onclick={sendEmail}
+            >
+                Send
+            </Button>
+        {/snippet}
+    </Dialog>
+{/if}
 
 <Dialog bind:open title={editing ? "Edit invoice" : "New invoice"} size="xl">
     <div class="grid gap-3 sm:grid-cols-3">
@@ -874,9 +1002,8 @@
             <p class="mt-2 text-xs text-vscode-description">
                 The first child invoice spawns on the issue date you picked
                 above, then every {recurring.interval}
-                {recurring.freq}.
-                Requires <code>pg_cron</code> enabled in Supabase Dashboard →
-                Database → Extensions; templates can be edited or deleted
+                {recurring.freq}. Requires <code>pg_cron</code> enabled in Supabase
+                Dashboard → Database → Extensions; templates can be edited or deleted
                 anytime to pause/stop billing.
             </p>
         {/if}

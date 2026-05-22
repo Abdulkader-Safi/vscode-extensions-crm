@@ -35,6 +35,30 @@ export async function uploadProfileAsset(
   return data.signedUrl;
 }
 
+// Upload an invoice PDF to crm-files/<user_id>/invoices/<invoice_id>.pdf.
+// Used by the "Email invoice" flow so the Edge Function can mint a short-lived
+// signed URL for the recipient. We deliberately render PDFs in the browser
+// (jsPDF) and only upload the result — running jsPDF in Deno would add bulk
+// + cold-start latency for no benefit.
+export async function uploadInvoicePdf(
+  invoiceId: string,
+  pdfBytes: ArrayBuffer,
+): Promise<string> {
+  if (!auth.user) {
+    throw new Error("Not authenticated");
+  }
+  const path = `${auth.user.id}/invoices/${invoiceId}.pdf`;
+  const supa = getSupabase();
+  const { error } = await supa.storage.from(BUCKET).upload(path, pdfBytes, {
+    upsert: true,
+    contentType: "application/pdf",
+  });
+  if (error) {
+    throw error;
+  }
+  return path;
+}
+
 // Delete the asset (path is reconstructed from the kind only — we know the
 // extension of the *current* asset only via the existing signed URL, so we
 // list-and-remove anything matching <user_id>/<kind>.* instead).
