@@ -2,13 +2,21 @@
     import { writable } from "svelte/store";
     import { toast } from "svelte-sonner";
     import { push } from "svelte-spa-router";
+    import { formatDistanceToNow } from "date-fns";
     import { dndzone, type DndEvent } from "svelte-dnd-action";
     import { flip } from "svelte/animate";
-    import { ArrowLeft, GripVertical, Plus, Trash2 } from "lucide-svelte";
+    import {
+        ArrowLeft,
+        GripVertical,
+        Plus,
+        StickyNote,
+        Trash2,
+    } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
     import Input from "../lib/components/ui/Input.svelte";
+    import Textarea from "../lib/components/ui/Textarea.svelte";
     import Select from "../lib/components/ui/Select.svelte";
     import Field from "../lib/components/ui/Field.svelte";
     import EmptyState from "../lib/components/ui/EmptyState.svelte";
@@ -24,6 +32,10 @@
         type Task,
     } from "../lib/queries/tasks";
     import { useProjectsQuery } from "../lib/queries/projects";
+    import {
+        useTaskCommunicationLogsQuery,
+        useCreateTaskCommunicationLogMutation,
+    } from "../lib/queries/communicationLogs";
 
     interface Props {
         params: { id: string };
@@ -41,13 +53,23 @@
     const updateMutation = useUpdateTaskMutation();
     const createMutation = useCreateTaskMutation();
     const reorderMutation = useReorderSubtasksMutation();
+    // Activity log hooks key on the id at mount — svelte-spa-router mounts a
+    // fresh TaskDetail when arriving from the list/kanban (the common path).
+    // svelte-ignore state_referenced_locally
+    const logsQuery = useTaskCommunicationLogsQuery(params.id);
+    // svelte-ignore state_referenced_locally
+    const createLogMutation = useCreateTaskCommunicationLogMutation(params.id);
 
     const PRIORITIES = ["low", "medium", "high", "urgent"];
     const STATUSES = ["todo", "in_progress", "done"];
+    const LOG_TYPES = ["note", "comment", "call", "email", "meeting"];
 
     const task = $derived($taskQuery.data ?? null);
     const categories = $derived($categoriesQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
+    const logs = $derived($logsQuery.data ?? []);
+
+    let logForm = $state({ type: "note", title: "", content: "" });
 
     // Local optimistic order for drag-and-drop — synced from query data,
     // mutated by drag, persisted on finalize.
@@ -123,6 +145,25 @@
 
     async function removeSubtask(id: string) {
         await softDelete(queryClient, "tasks", [id]);
+    }
+
+    async function addLog() {
+        if (!logForm.title.trim() && !logForm.content.trim()) {
+            toast.error("Add a title or content");
+            return;
+        }
+        try {
+            await $createLogMutation.mutateAsync({
+                type: logForm.type,
+                title: logForm.title.trim() || null,
+                content: logForm.content.trim() || null,
+                occurred_at: new Date().toISOString(),
+            });
+            logForm = { type: "note", title: "", content: "" };
+            toast.success("Added");
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
     }
 </script>
 
@@ -309,6 +350,67 @@
                                 >
                                     <Trash2 class="h-3.5 w-3.5" />
                                 </Button>
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            </Card>
+
+            <Card title="Activity" class="lg:col-span-3">
+                <div class="mb-4 space-y-2 border-b border-vscode-border pb-4">
+                    <Select bind:value={logForm.type}>
+                        {#each LOG_TYPES as t (t)}
+                            <option value={t}>{t}</option>
+                        {/each}
+                    </Select>
+                    <Input placeholder="Title" bind:value={logForm.title} />
+                    <Textarea
+                        placeholder="What happened?"
+                        rows={2}
+                        bind:value={logForm.content}
+                    />
+                    <Button
+                        variant="brand"
+                        size="sm"
+                        class="w-full"
+                        onclick={addLog}
+                    >
+                        <Plus class="h-3.5 w-3.5" /> Add
+                    </Button>
+                </div>
+                {#if logs.length === 0}
+                    <p class="text-xs text-vscode-description">
+                        No activity yet.
+                    </p>
+                {:else}
+                    <ul class="space-y-3">
+                        {#each logs as log (log.id)}
+                            <li class="flex gap-2 text-sm">
+                                <StickyNote
+                                    class="mt-0.5 h-3.5 w-3.5 shrink-0 text-vscode-description"
+                                />
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium"
+                                            >{log.title || log.type}</span
+                                        >
+                                        <span
+                                            class="text-[11px] text-vscode-description"
+                                        >
+                                            {formatDistanceToNow(
+                                                new Date(log.occurred_at),
+                                                { addSuffix: true },
+                                            )}
+                                        </span>
+                                    </div>
+                                    {#if log.content}
+                                        <p
+                                            class="text-xs text-vscode-description"
+                                        >
+                                            {log.content}
+                                        </p>
+                                    {/if}
+                                </div>
                             </li>
                         {/each}
                     </ul>

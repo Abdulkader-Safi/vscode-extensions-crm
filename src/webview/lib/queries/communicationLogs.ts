@@ -11,6 +11,7 @@ export type CommunicationLog = {
   id: string;
   client_id: string | null;
   lead_id?: string | null;
+  task_id?: string | null;
   type: string;
   title: string | null;
   content: string | null;
@@ -130,6 +131,64 @@ export function useCreateLeadCommunicationLogMutation(leadId: string) {
     },
     onSettled: () => {
       client.invalidateQueries({ queryKey: leadLogsKey(leadId) });
+    },
+  });
+}
+
+// --- Task variants (Batch 16) — same table, scoped by task_id. ---
+
+const taskLogsKey = (taskId: string) =>
+  ["communication_logs", "task", taskId] as const;
+
+async function fetchTaskCommunicationLogs(
+  taskId: string,
+): Promise<CommunicationLog[]> {
+  if (!auth.user) {
+    return [];
+  }
+  const { data, error } = await getSupabase()
+    .from("communication_logs")
+    .select("*")
+    .eq("user_id", auth.user.id)
+    .eq("task_id", taskId)
+    .order("occurred_at", { ascending: false });
+  if (error) {
+    throw error;
+  }
+  return (data as CommunicationLog[]) ?? [];
+}
+
+export function useTaskCommunicationLogsQuery(taskId: string) {
+  return createQuery<CommunicationLog[], Error>({
+    queryKey: taskLogsKey(taskId),
+    queryFn: () => fetchTaskCommunicationLogs(taskId),
+    enabled: !!taskId,
+  });
+}
+
+export function useCreateTaskCommunicationLogMutation(taskId: string) {
+  const client = useQueryClient();
+  return createMutation<
+    CommunicationLog,
+    Error,
+    Omit<CommunicationLogInsert, "user_id" | "client_id" | "task_id">
+  >({
+    mutationFn: async (payload) => {
+      if (!auth.user) {
+        throw new Error("Not authenticated");
+      }
+      const { data, error } = await getSupabase()
+        .from("communication_logs")
+        .insert({ ...payload, user_id: auth.user.id, task_id: taskId })
+        .select()
+        .single();
+      if (error) {
+        throw error;
+      }
+      return data as CommunicationLog;
+    },
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: taskLogsKey(taskId) });
     },
   });
 }
