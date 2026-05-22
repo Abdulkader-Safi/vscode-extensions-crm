@@ -2,9 +2,10 @@
   "name": "vs-crm",
   "displayName": "vs-crm",
   "description": "A complete CRM (clients, projects, tasks, invoices, expenses, reports) running inside VS Code on top of your own Supabase project.",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "publisher": "abdulkadersafi",
   "license": "MIT",
+  "icon": "assets/logo.png",
   "engines": {
     "vscode": "^1.116.0"
   },

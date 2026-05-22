@@ -1,10 +1,21 @@
+<div align="center">
+
+<img src="assets/logo.png" alt="vs-crm logo" width="128" height="128" />
+
 # vs-crm
 
-A complete CRM that runs **inside VS Code**, on top of **your own Supabase project**. Manage clients, leads, projects, tasks, time, invoices (with PDF), expenses, and reports — without ever leaving the editor.
+**A complete CRM that runs inside VS Code — on top of _your own_ Supabase project.**
 
-Your data stays in your Supabase project. The extension never sees a third-party server.
+Manage clients, leads, projects, tasks, time, invoices (with PDF), expenses, and reports without ever leaving the editor. Your data lives in your Supabase project; the extension never talks to a third-party server.
 
-### Setup walkthrough (video)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](./package.json)
+
+</div>
+
+---
+
+## Setup walkthrough (video)
 
 [![Watch the vs-crm + Supabase setup walkthrough on YouTube](https://img.youtube.com/vi/QR_4xnOcwzI/maxresdefault.jpg)](https://www.youtube.com/watch?v=QR_4xnOcwzI)
 
@@ -102,7 +113,7 @@ Need to start over (different Supabase project, etc.)? Run **`vs-crm: Reset Onbo
 ## Development
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/Abdulkader-Safi/vscode-extensions-crm.git vs-crm
 cd vs-crm
 npm install
 npm run watch       # esbuild watch + svelte-check watch
