@@ -443,6 +443,18 @@
                                             >
                                         {/if}
                                     </button>
+                                    <Input
+                                        type="date"
+                                        class="w-auto"
+                                        value={t.due_date ?? ""}
+                                        onchange={(e: Event) =>
+                                            patchTask(t, {
+                                                due_date:
+                                                    (
+                                                        e.target as HTMLInputElement
+                                                    ).value || null,
+                                            })}
+                                    />
                                     <Select
                                         value={t.priority}
                                         onchange={(e: Event) =>
