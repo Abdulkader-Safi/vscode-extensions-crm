@@ -2,7 +2,9 @@
     import { writable } from "svelte/store";
     import { toast } from "svelte-sonner";
     import { push } from "svelte-spa-router";
-    import { ArrowLeft, Plus, Trash2 } from "lucide-svelte";
+    import { dndzone, type DndEvent } from "svelte-dnd-action";
+    import { flip } from "svelte/animate";
+    import { ArrowLeft, GripVertical, Plus, Trash2 } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -18,6 +20,7 @@
         useTaskCategoriesQuery,
         useUpdateTaskMutation,
         useCreateTaskMutation,
+        useReorderSubtasksMutation,
         type Task,
     } from "../lib/queries/tasks";
     import { useProjectsQuery } from "../lib/queries/projects";
@@ -37,16 +40,40 @@
     const projectsQuery = useProjectsQuery();
     const updateMutation = useUpdateTaskMutation();
     const createMutation = useCreateTaskMutation();
+    const reorderMutation = useReorderSubtasksMutation();
 
     const PRIORITIES = ["low", "medium", "high", "urgent"];
     const STATUSES = ["todo", "in_progress", "done"];
 
     const task = $derived($taskQuery.data ?? null);
-    const subtasks = $derived($subtasksQuery.data ?? []);
     const categories = $derived($categoriesQuery.data ?? []);
     const projects = $derived($projectsQuery.data ?? []);
 
+    // Local optimistic order for drag-and-drop — synced from query data,
+    // mutated by drag, persisted on finalize.
+    let subtasks = $state<Task[]>([]);
+    $effect(() => {
+        subtasks = $subtasksQuery.data ?? [];
+    });
+
     let newSubtask = $state("");
+
+    function onConsider(e: CustomEvent<DndEvent<Task>>) {
+        subtasks = e.detail.items;
+    }
+
+    async function onFinalize(e: CustomEvent<DndEvent<Task>>) {
+        subtasks = e.detail.items;
+        if (!task) return;
+        try {
+            await $reorderMutation.mutateAsync({
+                parentId: task.id,
+                orderedIds: subtasks.map((s) => s.id),
+            });
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
 
     async function patch(p: Partial<Task>) {
         if (!task) return;
@@ -232,26 +259,47 @@
                         No subtasks yet.
                     </p>
                 {:else}
-                    <ul class="divide-y divide-vscode-border">
+                    <ul
+                        class="divide-y divide-vscode-border"
+                        use:dndzone={{
+                            items: subtasks,
+                            flipDurationMs: 150,
+                            type: "subtask",
+                            dropTargetStyle: {},
+                        }}
+                        onconsider={(e) =>
+                            onConsider(e as CustomEvent<DndEvent<Task>>)}
+                        onfinalize={(e) =>
+                            onFinalize(e as CustomEvent<DndEvent<Task>>)}
+                    >
                         {#each subtasks as st (st.id)}
                             <li
+                                animate:flip={{ duration: 150 }}
                                 class="group flex items-center justify-between gap-2 py-2 text-sm"
                             >
-                                <label class="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={st.status === "done"}
-                                        onchange={() => toggleSubtask(st)}
-                                    />
+                                <div class="flex min-w-0 items-center gap-2">
                                     <span
-                                        class:line-through={st.status ===
-                                            "done"}
-                                        class:text-vscode-description={st.status ===
-                                            "done"}
+                                        class="cursor-grab text-vscode-description active:cursor-grabbing"
+                                        aria-label="Drag to reorder"
                                     >
-                                        {st.title}
+                                        <GripVertical class="h-3.5 w-3.5" />
                                     </span>
-                                </label>
+                                    <label class="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={st.status === "done"}
+                                            onchange={() => toggleSubtask(st)}
+                                        />
+                                        <span
+                                            class:line-through={st.status ===
+                                                "done"}
+                                            class:text-vscode-description={st.status ===
+                                                "done"}
+                                        >
+                                            {st.title}
+                                        </span>
+                                    </label>
+                                </div>
                                 <Button
                                     size="icon"
                                     variant="ghost"

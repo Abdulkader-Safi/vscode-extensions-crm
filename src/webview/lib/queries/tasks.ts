@@ -29,6 +29,8 @@ export type Task = {
   // Batch 17 — subtasks (one-level tree) + free-form category.
   parent_task_id?: string | null;
   category?: string | null;
+  // Batch 16 — explicit subtask ordering (NULL for unordered/top-level rows).
+  position?: number | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -90,11 +92,15 @@ export function useTaskQuery(idStore: Readable<string>) {
   );
 }
 
-// Children of a task, ordered oldest-first.
+// Children of a task, ordered by explicit position then created_at as
+// tiebreak (rows predating drag-reorder have a NULL position).
+const subtasksKey = (parentId: string) =>
+  ["tasks", "subtasks", parentId] as readonly unknown[];
+
 export function useSubtasksQuery(parentIdStore: Readable<string>) {
   return createQuery(
     derivedStore(parentIdStore, (parentId) => ({
-      queryKey: ["tasks", "subtasks", parentId] as readonly unknown[],
+      queryKey: subtasksKey(parentId),
       enabled: !!parentId,
       queryFn: async () => {
         if (!auth.user || !parentId) return [];
@@ -104,11 +110,33 @@ export function useSubtasksQuery(parentIdStore: Readable<string>) {
           .eq("user_id", auth.user.id)
           .eq("parent_task_id", parentId)
           .is("deleted_at", null)
+          .order("position", { ascending: true, nullsFirst: false })
           .order("created_at", { ascending: true });
         if (error) throw error;
         return (data as Task[]) ?? [];
       },
     })),
+  );
+}
+
+// Persists a new subtask order: writes sequential position 0..n for the given
+// ids (already in the desired order) and refreshes the parent's subtask cache.
+export function useReorderSubtasksMutation() {
+  const client = useQueryClient();
+  return createMutation<void, Error, { parentId: string; orderedIds: string[] }>(
+    {
+      mutationFn: async (vars) => {
+        const supa = getSupabase();
+        await Promise.all(
+          vars.orderedIds.map((id, i) =>
+            supa.from("tasks").update({ position: i }).eq("id", id),
+          ),
+        );
+      },
+      onSettled: (_d, _e, vars) => {
+        client.invalidateQueries({ queryKey: subtasksKey(vars.parentId) });
+      },
+    },
   );
 }
 
