@@ -6,6 +6,7 @@ import {
 import { getSupabase } from "../supabase";
 import { auth } from "../stores/auth.svelte";
 import { qk } from "./keys";
+import { derivedStore } from "./pagination";
 
 export type Lead = {
   id: string;
@@ -19,6 +20,9 @@ export type Lead = {
   notes: string | null;
   position: number;
   converted_client_id?: string | null;
+  // Batch 18 — links a lead created from an existing client back to that
+  // client (distinct from converted_client_id, set when a lead is won).
+  client_id?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -45,6 +49,47 @@ export function useLeadsQuery() {
   return createQuery<Lead[], Error>({
     queryKey: qk.leads(),
     queryFn: fetchLeads,
+  });
+}
+
+// Single lead for the /leads/:id detail page.
+export function useLeadQuery(idStore: import("svelte/store").Readable<string>) {
+  return createQuery(
+    derivedStore(idStore, (id) => ({
+      queryKey: ["leads", "one", id] as readonly unknown[],
+      enabled: !!id,
+      queryFn: async () => {
+        if (!auth.user || !id) return null;
+        const { data, error } = await getSupabase()
+          .from("leads")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw error;
+        return (data as Lead) ?? null;
+      },
+    })),
+  );
+}
+
+// Patch a lead (used by the detail page for inline edits + stage change).
+export function useUpdateLeadMutation() {
+  const client = useQueryClient();
+  return createMutation<Lead, Error, { id: string; patch: Partial<Lead> }>({
+    mutationFn: async (vars) => {
+      const { data, error } = await getSupabase()
+        .from("leads")
+        .update(vars.patch)
+        .eq("id", vars.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Lead;
+    },
+    onSettled: (_d, _e, vars) => {
+      client.invalidateQueries({ queryKey: qk.leads() });
+      client.invalidateQueries({ queryKey: ["leads", "one", vars.id] });
+    },
   });
 }
 

@@ -28,10 +28,12 @@
     import Clients from "./routes/Clients.svelte";
     import ClientDetail from "./routes/ClientDetail.svelte";
     import Leads from "./routes/Leads.svelte";
+    import LeadDetail from "./routes/LeadDetail.svelte";
     import Projects from "./routes/Projects.svelte";
     import ProjectDetail from "./routes/ProjectDetail.svelte";
     import Tasks from "./routes/Tasks.svelte";
     import TasksKanban from "./routes/TasksKanban.svelte";
+    import TaskDetail from "./routes/TaskDetail.svelte";
     import Invoices from "./routes/Invoices.svelte";
     import Expenses from "./routes/Expenses.svelte";
     import Reports from "./routes/Reports.svelte";
@@ -64,10 +66,12 @@
         "/clients": Clients,
         "/clients/:id": ClientDetail,
         "/leads": Leads,
+        "/leads/:id": LeadDetail,
         "/projects": Projects,
         "/projects/:id": ProjectDetail,
         "/tasks": Tasks,
         "/tasks/kanban": TasksKanban,
+        "/tasks/:id": TaskDetail,
         "/invoices": Invoices,
         "/expenses": Expenses,
         "/reports": Reports,

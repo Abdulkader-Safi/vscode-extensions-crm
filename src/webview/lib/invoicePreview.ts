@@ -13,6 +13,7 @@ import {
 } from "./queries/invoices";
 import type { Client } from "./queries/clients";
 import { formatCurrency } from "./utils";
+import { saveBinaryFile } from "./saveFile";
 
 export type InvoiceBrand = {
   color: string;
@@ -126,4 +127,19 @@ export function renderInvoicePdf(preview: InvoicePreview): jsPDF {
     doc.text(`Notes: ${inv.notes}`, 14, y);
   }
   return doc;
+}
+
+// Shared download helper used by both the Invoices route and the client-detail
+// invoice list: render the preview to a PDF and save it via the IPC file-save
+// flow. Filename is the invoice number.
+export async function downloadInvoicePdf(
+  preview: InvoicePreview,
+): Promise<void> {
+  const pdf = renderInvoicePdf(preview);
+  const buf = pdf.output("arraybuffer") as ArrayBuffer;
+  await saveBinaryFile(
+    `${preview.invoice.invoice_number}.pdf`,
+    "application/pdf",
+    buf,
+  );
 }

@@ -10,7 +10,7 @@
     import { dndzone, type DndEvent } from "svelte-dnd-action";
     import { flip } from "svelte/animate";
     import { Trash2, List as ListIcon } from "lucide-svelte";
-    import { link } from "svelte-spa-router";
+    import { link, push } from "svelte-spa-router";
     import { useQueryClient } from "@tanstack/svelte-query";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -44,7 +44,10 @@
     // Local optimistic dnd state — synced from query data, mutated by drag.
     let columns = $state<Record<string, Task[]>>({});
 
-    const tasks = $derived($tasksQuery.data ?? []);
+    // Top-level tasks only — subtasks live under their parent on the detail page.
+    const tasks = $derived(
+        ($tasksQuery.data ?? []).filter((t) => !t.parent_task_id),
+    );
 
     // Rebuild columns whenever tasks change (initial load + after mutations).
     $effect(() => {
@@ -142,11 +145,16 @@
                             class="group cursor-grab rounded-md border border-vscode-card-border bg-vscode-card-bg p-2 active:cursor-grabbing"
                         >
                             <div class="flex items-start justify-between gap-2">
-                                <p
-                                    class="min-w-0 flex-1 truncate text-sm font-medium"
+                                <button
+                                    type="button"
+                                    class="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline"
+                                    onclick={(e) => {
+                                        e.stopPropagation();
+                                        push(`/tasks/${task.id}`);
+                                    }}
                                 >
                                     {task.title}
-                                </p>
+                                </button>
                                 <Badge
                                     tone={priorityTone[task.priority] ??
                                         "muted"}

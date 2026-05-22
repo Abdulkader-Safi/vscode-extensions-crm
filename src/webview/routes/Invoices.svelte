@@ -62,12 +62,13 @@
     const PORTAL_BASE =
         "https://abdulkader-safi.github.io/vscode-extensions-crm/portal/";
 
-    const STATUSES = ["draft", "sent", "paid", "overdue"];
+    const STATUSES = ["draft", "sent", "paid", "overdue", "cancelled"];
     const statusTone: Record<string, "muted" | "info" | "success" | "error"> = {
         draft: "muted",
         sent: "info",
         paid: "success",
         overdue: "error",
+        cancelled: "error",
     };
 
     function blankItem(position: number): Item {
@@ -589,7 +590,9 @@
     async function revokeShareLink() {
         if (!shareDialog) return;
         try {
-            await $revokeShareMutation.mutateAsync({ id: shareDialog.target.id });
+            await $revokeShareMutation.mutateAsync({
+                id: shareDialog.target.id,
+            });
             shareDialog = null;
             toast.success("Share link revoked");
         } catch (e) {
@@ -913,9 +916,8 @@
             </Field>
             <p class="text-xs text-vscode-description">
                 The PDF is generated locally and attached as a secure download
-                link (valid 24h). Requires the <code>send-invoice</code> Edge
-                Function deployed with a Resend API key — see the function's
-                README.
+                link (valid 24h). Requires the <code>send-invoice</code> Edge Function
+                deployed with a Resend API key — see the function's README.
             </p>
         </div>
         {#snippet footer()}

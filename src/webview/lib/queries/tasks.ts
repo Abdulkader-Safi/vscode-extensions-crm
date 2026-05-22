@@ -26,13 +26,21 @@ export type Task = {
   project_id: string | null;
   time_spent_minutes: number;
   completed_at: string | null;
+  // Batch 17 — subtasks (one-level tree) + free-form category.
+  parent_task_id?: string | null;
+  category?: string | null;
   created_at?: string;
   updated_at?: string;
 };
 
 export type TaskInsert = Omit<Task, "id" | "created_at" | "updated_at">;
 
-async function fetchTasks(projectId?: string): Promise<Task[]> {
+// `topLevelOnly` excludes subtasks (parent_task_id IS NOT NULL) from list /
+// project views so children only appear nested under their parent.
+async function fetchTasks(
+  projectId?: string,
+  topLevelOnly = false,
+): Promise<Task[]> {
   if (!auth.user) {
     return [];
   }
@@ -44,6 +52,9 @@ async function fetchTasks(projectId?: string): Promise<Task[]> {
     .order("created_at", { ascending: false });
   if (projectId) {
     q = q.eq("project_id", projectId);
+  }
+  if (topLevelOnly) {
+    q = q.is("parent_task_id", null);
   }
   const { data, error } = await q;
   if (error) {
@@ -59,10 +70,76 @@ export function useTasksQuery(projectId?: string) {
   });
 }
 
+// Single task for the /tasks/:id detail page.
+export function useTaskQuery(idStore: Readable<string>) {
+  return createQuery(
+    derivedStore(idStore, (id) => ({
+      queryKey: ["tasks", "one", id] as readonly unknown[],
+      enabled: !!id,
+      queryFn: async () => {
+        if (!auth.user || !id) return null;
+        const { data, error } = await getSupabase()
+          .from("tasks")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw error;
+        return (data as Task) ?? null;
+      },
+    })),
+  );
+}
+
+// Children of a task, ordered oldest-first.
+export function useSubtasksQuery(parentIdStore: Readable<string>) {
+  return createQuery(
+    derivedStore(parentIdStore, (parentId) => ({
+      queryKey: ["tasks", "subtasks", parentId] as readonly unknown[],
+      enabled: !!parentId,
+      queryFn: async () => {
+        if (!auth.user || !parentId) return [];
+        const { data, error } = await getSupabase()
+          .from("tasks")
+          .select("*")
+          .eq("user_id", auth.user.id)
+          .eq("parent_task_id", parentId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        return (data as Task[]) ?? [];
+      },
+    })),
+  );
+}
+
+// Distinct non-null categories the user has used — feeds the chip-input
+// autocomplete (mirrors useClientTagsQuery).
+export function useTaskCategoriesQuery() {
+  return createQuery<string[], Error>({
+    queryKey: ["tasks", "categories"] as const,
+    queryFn: async () => {
+      if (!auth.user) return [];
+      const { data, error } = await getSupabase()
+        .from("tasks")
+        .select("category")
+        .eq("user_id", auth.user.id)
+        .is("deleted_at", null)
+        .not("category", "is", null);
+      if (error) throw error;
+      const set = new Set<string>();
+      for (const row of (data ?? []) as { category: string | null }[]) {
+        if (row.category) set.add(row.category);
+      }
+      return [...set].sort();
+    },
+  });
+}
+
 export type TaskListFilters = {
   status?: string;
   projectId?: string;
   priority?: string;
+  category?: string;
 };
 export type TaskListSortField =
   | "created_at"
@@ -99,11 +176,14 @@ export function useTasksListQuery(
           .select("*")
           .eq("user_id", auth.user.id)
           .is("deleted_at", null)
+          // Top-level only — subtasks appear nested on the task detail page.
+          .is("parent_task_id", null)
           .order(sort.field, { ascending: sort.direction === "asc" })
           .range(pageParam, pageParam + PAGE_SIZE - 1);
         if (filters.status) q = q.eq("status", filters.status);
         if (filters.projectId) q = q.eq("project_id", filters.projectId);
         if (filters.priority) q = q.eq("priority", filters.priority);
+        if (filters.category) q = q.eq("category", filters.category);
         const { data, error } = await q;
         if (error) throw error;
         return (data as Task[]) ?? [];

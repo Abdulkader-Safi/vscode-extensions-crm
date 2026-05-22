@@ -17,6 +17,9 @@
         X,
         Plus,
         FileText,
+        FileDown,
+        Check,
+        Ban,
         Phone as PhoneIcon,
         Mail as MailIcon,
         StickyNote,
@@ -42,7 +45,15 @@
         type Client,
     } from "../lib/queries/clients";
     import { useProjectsQuery } from "../lib/queries/projects";
-    import { useInvoicesQuery } from "../lib/queries/invoices";
+    import {
+        useInvoicesQuery,
+        useUpdateInvoiceMutation,
+        type Invoice,
+    } from "../lib/queries/invoices";
+    import {
+        loadInvoicePreview,
+        downloadInvoicePdf,
+    } from "../lib/invoicePreview";
     import type {
         CommunicationLog,
         CommunicationLogInsert,
@@ -135,6 +146,56 @@
     const projectsQuery = useProjectsQuery();
     const invoicesQuery = useInvoicesQuery();
     const updateMutation = useUpdateClientMutation();
+    const updateInvoiceMutation = useUpdateInvoiceMutation();
+
+    const invoiceStatusTone: Record<
+        string,
+        "muted" | "info" | "success" | "error"
+    > = {
+        draft: "muted",
+        sent: "info",
+        paid: "success",
+        overdue: "error",
+        cancelled: "error",
+    };
+
+    async function downloadInvoice(inv: Invoice) {
+        try {
+            const preview = await loadInvoicePreview(
+                inv,
+                client ? [client] : [],
+                profile.profile,
+            );
+            await downloadInvoicePdf(preview);
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
+
+    async function setInvoiceStatus(
+        inv: Invoice,
+        status: "paid" | "sent" | "cancelled",
+    ) {
+        try {
+            await $updateInvoiceMutation.mutateAsync({
+                id: inv.id,
+                patch: {
+                    status,
+                    paid_at:
+                        status === "paid" ? new Date().toISOString() : null,
+                },
+            });
+            toast.success(
+                status === "paid"
+                    ? "Marked paid"
+                    : status === "cancelled"
+                      ? "Invoice cancelled"
+                      : "Marked unpaid",
+            );
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
 
     let editing = $state(false);
     let form = $state({
@@ -415,6 +476,16 @@
                 </Card>
 
                 <Card title="Linked projects">
+                    <div class="mb-2 flex justify-end">
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onclick={() =>
+                                push(`/projects?newClient=${params.id}`)}
+                        >
+                            <Plus class="h-3.5 w-3.5" /> New project
+                        </Button>
+                    </div>
                     {#if linkedProjects.length === 0}
                         <EmptyState
                             title="No projects yet"
@@ -456,19 +527,87 @@
                         <ul class="divide-y divide-vscode-border">
                             {#each linkedInvoices as inv (inv.id)}
                                 <li
-                                    class="flex items-center justify-between gap-3 py-2 text-sm"
+                                    class="group flex items-center justify-between gap-3 py-2 text-sm"
                                 >
                                     <span class="flex items-center gap-2">
                                         <FileText class="h-3.5 w-3.5" />
                                         {inv.invoice_number}
                                     </span>
-                                    <span class="flex items-center gap-3">
-                                        <Badge tone="muted">{inv.status}</Badge>
+                                    <span class="flex items-center gap-2">
+                                        <Badge
+                                            tone={invoiceStatusTone[
+                                                inv.status
+                                            ] ?? "muted"}
+                                        >
+                                            {inv.status}
+                                        </Badge>
                                         <span class="font-medium">
                                             {formatCurrency(
                                                 Number(inv.total),
                                                 inv.currency,
                                             )}
+                                        </span>
+                                        <span
+                                            class="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+                                        >
+                                            {#if inv.status !== "paid"}
+                                                <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    class="text-vscode-success"
+                                                    aria-label="Mark paid"
+                                                    title="Mark paid"
+                                                    onclick={() =>
+                                                        setInvoiceStatus(
+                                                            inv,
+                                                            "paid",
+                                                        )}
+                                                >
+                                                    <Check
+                                                        class="h-3.5 w-3.5"
+                                                    />
+                                                </Button>
+                                            {:else}
+                                                <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    aria-label="Mark unpaid"
+                                                    title="Mark unpaid"
+                                                    onclick={() =>
+                                                        setInvoiceStatus(
+                                                            inv,
+                                                            "sent",
+                                                        )}
+                                                >
+                                                    <X class="h-3.5 w-3.5" />
+                                                </Button>
+                                            {/if}
+                                            {#if inv.status !== "cancelled"}
+                                                <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    class="text-vscode-error"
+                                                    aria-label="Cancel invoice"
+                                                    title="Cancel invoice"
+                                                    onclick={() =>
+                                                        setInvoiceStatus(
+                                                            inv,
+                                                            "cancelled",
+                                                        )}
+                                                >
+                                                    <Ban class="h-3.5 w-3.5" />
+                                                </Button>
+                                            {/if}
+                                            <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                aria-label="Download PDF"
+                                                title="Download PDF"
+                                                onclick={() =>
+                                                    downloadInvoice(inv)}
+                                            >
+                                                <FileDown class="h-3.5 w-3.5" />
+                                            </Button>
                                         </span>
                                     </span>
                                 </li>

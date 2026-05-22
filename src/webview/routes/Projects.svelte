@@ -9,6 +9,7 @@
         ArrowUp,
     } from "lucide-svelte";
     import { push } from "svelte-spa-router";
+    import { onMount } from "svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -110,11 +111,28 @@
         sort = { field: "created_at", direction: "desc" };
     }
 
-    function openNew() {
+    function openNew(clientId?: string) {
         editing = null;
-        form = { ...blank };
+        form = { ...blank, client_id: clientId ?? "none" };
         open = true;
     }
+
+    // Deep-link from ClientDetail: /projects?newClient=<id> opens the create
+    // dialog pre-filled with that client. We parse the hash directly (this
+    // svelte-spa-router version doesn't export a `querystring` store). Strip
+    // the param afterward so a reload / back-nav doesn't re-trigger it.
+    onMount(() => {
+        const hash = window.location.hash; // e.g. #/projects?newClient=<id>
+        const qIndex = hash.indexOf("?");
+        if (qIndex === -1) return;
+        const newClient = new URLSearchParams(hash.slice(qIndex + 1)).get(
+            "newClient",
+        );
+        if (newClient) {
+            openNew(newClient);
+            push("/projects");
+        }
+    });
 
     $effect(() =>
         commands.register({
@@ -122,7 +140,7 @@
             title: "New project",
             group: "Create",
             hint: "⌘N",
-            run: openNew,
+            run: () => openNew(),
         }),
     );
     function openEdit(p: Project) {
@@ -192,7 +210,7 @@
         description={$_("page.projects.description")}
     >
         {#snippet actions()}
-            <Button variant="brand" onclick={openNew}>
+            <Button variant="brand" onclick={() => openNew()}>
                 <Plus class="h-4 w-4" />
                 {$_("page.projects.newAction")}
             </Button>
@@ -208,7 +226,7 @@
                 description="Track the work you're doing for clients."
             >
                 {#snippet action()}
-                    <Button variant="brand" onclick={openNew}>
+                    <Button variant="brand" onclick={() => openNew()}>
                         <Plus class="h-4 w-4" /> Create project
                     </Button>
                 {/snippet}

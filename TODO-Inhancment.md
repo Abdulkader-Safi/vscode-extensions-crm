@@ -62,7 +62,7 @@ here are mostly UI + small schema additions.
   - OR: dedicated `task_categories` table with FK from `tasks.category_id`,
     user-managed list in Settings. More work, cleaner data model.
 - [ ] **Subtasks**: each task can have child tasks. Add `parent_task_id UUID
-    REFERENCES tasks(id) ON DELETE CASCADE` to the `tasks` table; UI shows
+  REFERENCES tasks(id) ON DELETE CASCADE` to the `tasks` table; UI shows
       indented child rows under the parent on the list, full tree on detail.
 - [ ] **Task detail page** at `/tasks/:id`. Click a task in the list (or a
       kanban card) to open a detail view that exposes:

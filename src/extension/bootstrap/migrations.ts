@@ -11,6 +11,9 @@ import profileTzFxSql from "../../../migrations/0007_profile_timezone_fx.sql";
 import invoiceSaveFnSql from "../../../migrations/0008_invoice_save_fn.sql";
 import invoiceRecurringSql from "../../../migrations/0009_invoice_recurring.sql";
 import invoiceShareSql from "../../../migrations/0010_invoice_share.sql";
+import taskSubtasksCategoriesSql from "../../../migrations/0011_task_subtasks_categories.sql";
+import leadsClientLinkSql from "../../../migrations/0012_leads_client_link.sql";
+import commLogsLeadSql from "../../../migrations/0013_comm_logs_lead.sql";
 
 export type Migration = { name: string; sql: string };
 
@@ -24,4 +27,10 @@ export const MIGRATIONS: Migration[] = [
   { name: "0008_invoice_save_fn.sql", sql: invoiceSaveFnSql },
   { name: "0009_invoice_recurring.sql", sql: invoiceRecurringSql },
   { name: "0010_invoice_share.sql", sql: invoiceShareSql },
+  {
+    name: "0011_task_subtasks_categories.sql",
+    sql: taskSubtasksCategoriesSql,
+  },
+  { name: "0012_leads_client_link.sql", sql: leadsClientLinkSql },
+  { name: "0013_comm_logs_lead.sql", sql: commLogsLeadSql },
 ];

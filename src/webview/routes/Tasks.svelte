@@ -11,7 +11,7 @@
         ArrowUp,
         Columns3,
     } from "lucide-svelte";
-    import { link } from "svelte-spa-router";
+    import { link, push } from "svelte-spa-router";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
@@ -30,6 +30,7 @@
     import { writable } from "svelte/store";
     import {
         useTasksListQuery,
+        useTaskCategoriesQuery,
         type TaskListFilters,
         type TaskListSort,
         useCreateTaskMutation,
@@ -38,7 +39,6 @@
         type Task,
     } from "../lib/queries/tasks";
     import { useProjectsQuery } from "../lib/queries/projects";
-
 
     const PRIORITIES = ["low", "medium", "high", "urgent"];
     const STATUSES = ["todo", "in_progress", "done"];
@@ -62,6 +62,7 @@
 
     const queryClient = useQueryClient();
     const projectsQuery = useProjectsQuery();
+    const categoriesQuery = useTaskCategoriesQuery();
     const createMutation = useCreateTaskMutation();
     const updateMutation = useUpdateTaskMutation();
     const stopTimerMutation = useStopTimerMutation();
@@ -99,7 +100,9 @@
         status: "",
         projectId: "",
         priority: "",
+        category: "",
     });
+    const taskCategories = $derived($categoriesQuery.data ?? []);
     let sort = $state<TaskListSort>({
         field: "created_at",
         direction: "desc",
@@ -128,6 +131,7 @@
         !!filters.status ||
             !!filters.projectId ||
             !!filters.priority ||
+            !!filters.category ||
             sort.field !== "created_at" ||
             sort.direction !== "desc",
     );
@@ -140,7 +144,7 @@
     }
 
     function clearFilters() {
-        filters = { status: "", projectId: "", priority: "" };
+        filters = { status: "", projectId: "", priority: "", category: "" };
         sort = { field: "created_at", direction: "desc" };
     }
 
@@ -287,6 +291,16 @@
                     {/each}
                 </Select>
             </Field>
+            {#if taskCategories.length > 0}
+                <Field label="Category">
+                    <Select bind:value={filters.category}>
+                        <option value="">All</option>
+                        {#each taskCategories as c (c)}
+                            <option value={c}>{c}</option>
+                        {/each}
+                    </Select>
+                </Field>
+            {/if}
             <Field label="Sort by">
                 <Select bind:value={sort.field}>
                     <option value="created_at">Created</option>
@@ -334,14 +348,16 @@
                         />
                         <div class="min-w-0 flex-1">
                             <div class="flex flex-wrap items-center gap-2">
-                                <p
-                                    class="text-sm font-medium {t.status ===
+                                <button
+                                    type="button"
+                                    class="text-sm font-medium text-left hover:underline {t.status ===
                                     'done'
                                         ? 'line-through text-vscode-description'
                                         : ''}"
+                                    onclick={() => push(`/tasks/${t.id}`)}
                                 >
                                     {t.title}
-                                </p>
+                                </button>
                                 <Badge
                                     tone={priorityTone[t.priority] ?? "muted"}
                                 >
@@ -415,9 +431,7 @@
                     disabled={$tasksQuery.isFetchingNextPage}
                     onclick={() => $tasksQuery.fetchNextPage()}
                 >
-                    {$tasksQuery.isFetchingNextPage
-                        ? "Loading…"
-                        : "Load more"}
+                    {$tasksQuery.isFetchingNextPage ? "Loading…" : "Load more"}
                 </Button>
             </div>
         {/if}

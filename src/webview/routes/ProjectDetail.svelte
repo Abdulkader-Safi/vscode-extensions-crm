@@ -32,7 +32,13 @@
         type Project,
     } from "../lib/queries/projects";
     import { useClientsQuery } from "../lib/queries/clients";
-    import { useTasksQuery } from "../lib/queries/tasks";
+    import {
+        useTasksQuery,
+        useUpdateTaskMutation,
+        useCreateTaskMutation,
+        type Task,
+    } from "../lib/queries/tasks";
+    import { Plus } from "lucide-svelte";
     import { useInvoicesQuery } from "../lib/queries/invoices";
     import { useExpensesQuery } from "../lib/queries/expenses";
     import type { TimeEntry } from "../lib/queries/timeEntries";
@@ -95,6 +101,40 @@
     const invoicesQuery = useInvoicesQuery();
     const expensesQuery = useExpensesQuery();
     const updateMutation = useUpdateProjectMutation();
+    const updateTaskMutation = useUpdateTaskMutation();
+    const createTaskMutation = useCreateTaskMutation();
+
+    const TASK_STATUSES = ["todo", "in_progress", "done"];
+    const TASK_PRIORITIES = ["low", "medium", "high", "urgent"];
+    let newTaskTitle = $state("");
+
+    async function patchTask(t: Task, p: Partial<Task>) {
+        try {
+            await $updateTaskMutation.mutateAsync({ id: t.id, patch: p });
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
+
+    async function addTask() {
+        const title = newTaskTitle.trim();
+        if (!title) return;
+        try {
+            await $createTaskMutation.mutateAsync({
+                title: title.slice(0, 200),
+                description: null,
+                status: "todo",
+                priority: "medium",
+                due_date: null,
+                project_id: params.id,
+                time_spent_minutes: 0,
+                completed_at: null,
+            });
+            newTaskTitle = "";
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
 
     let editing = $state(false);
     let form = $state({
@@ -113,7 +153,9 @@
             ?.name ?? null,
     );
     const tasks = $derived(
-        ($tasksQuery.data ?? []).filter((t) => t.project_id === params.id),
+        ($tasksQuery.data ?? []).filter(
+            (t) => t.project_id === params.id && !t.parent_task_id,
+        ),
     );
     const invoices = $derived(
         ($invoicesQuery.data ?? []).filter((i) => i.project_id === params.id),
@@ -362,37 +404,77 @@
                 </Card>
 
                 <Card title="Tasks">
+                    <div class="mb-3 flex gap-2">
+                        <Input
+                            bind:value={newTaskTitle}
+                            placeholder="Add a task to this project…"
+                            onkeydown={(e: KeyboardEvent) => {
+                                if (e.key === "Enter") addTask();
+                            }}
+                        />
+                        <Button size="icon" variant="brand" onclick={addTask}>
+                            <Plus class="h-4 w-4" />
+                        </Button>
+                    </div>
                     {#if tasks.length === 0}
                         <EmptyState
                             title="No tasks yet"
-                            description="Create tasks against this project to track work."
+                            description="Add a task above to track work on this project."
                         />
                     {:else}
                         <ul class="divide-y divide-vscode-border">
                             {#each tasks as t (t.id)}
                                 <li
-                                    class="flex items-center justify-between gap-3 py-2 text-sm"
+                                    class="flex items-center justify-between gap-2 py-2 text-sm"
                                 >
-                                    <div class="min-w-0">
-                                        <p
-                                            class="truncate {t.status === 'done'
-                                                ? 'line-through text-vscode-description'
-                                                : ''}"
-                                        >
-                                            {t.title}
-                                        </p>
-                                        <p
-                                            class="text-[11px] text-vscode-description"
-                                        >
-                                            {t.priority} ·
-                                            {t.status.replace("_", " ")}
-                                            {#if t.time_spent_minutes > 0}
-                                                · {formatMinutes(
-                                                    t.time_spent_minutes,
-                                                )}
-                                            {/if}
-                                        </p>
-                                    </div>
+                                    <button
+                                        type="button"
+                                        class="min-w-0 flex-1 truncate text-left hover:underline {t.status ===
+                                        'done'
+                                            ? 'line-through text-vscode-description'
+                                            : ''}"
+                                        onclick={() => push(`/tasks/${t.id}`)}
+                                    >
+                                        {t.title}
+                                        {#if t.category}
+                                            <span
+                                                class="ml-1 rounded-full bg-vscode-muted-bg px-1.5 py-0.5 text-[10px] text-vscode-description"
+                                                >{t.category}</span
+                                            >
+                                        {/if}
+                                    </button>
+                                    <Select
+                                        value={t.priority}
+                                        onchange={(e: Event) =>
+                                            patchTask(t, {
+                                                priority: (
+                                                    e.target as HTMLSelectElement
+                                                ).value,
+                                            })}
+                                    >
+                                        {#each TASK_PRIORITIES as p (p)}
+                                            <option value={p}>{p}</option>
+                                        {/each}
+                                    </Select>
+                                    <Select
+                                        value={t.status}
+                                        onchange={(e: Event) => {
+                                            const v = (
+                                                e.target as HTMLSelectElement
+                                            ).value;
+                                            patchTask(t, {
+                                                status: v,
+                                                completed_at:
+                                                    v === "done"
+                                                        ? new Date().toISOString()
+                                                        : null,
+                                            });
+                                        }}
+                                    >
+                                        {#each TASK_STATUSES as s (s)}
+                                            <option value={s}>{s}</option>
+                                        {/each}
+                                    </Select>
                                 </li>
                             {/each}
                         </ul>

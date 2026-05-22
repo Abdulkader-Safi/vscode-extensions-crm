@@ -3,11 +3,13 @@
     import { dndzone, type DndEvent } from "svelte-dnd-action";
     import { flip } from "svelte/animate";
     import { Plus, ArrowRightLeft, Trash2 } from "lucide-svelte";
+    import { push } from "svelte-spa-router";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
     import Button from "../lib/components/ui/Button.svelte";
     import Input from "../lib/components/ui/Input.svelte";
     import Textarea from "../lib/components/ui/Textarea.svelte";
+    import Select from "../lib/components/ui/Select.svelte";
     import Field from "../lib/components/ui/Field.svelte";
     import Dialog from "../lib/components/ui/Dialog.svelte";
     import { useQueryClient } from "@tanstack/svelte-query";
@@ -23,6 +25,7 @@
         useReorderLeadsMutation,
         type Lead,
     } from "../lib/queries/leads";
+    import { useClientsQuery } from "../lib/queries/clients";
 
     const STAGES = [
         { id: "new", label: "New" },
@@ -44,12 +47,41 @@
 
     const queryClient = useQueryClient();
     const leadsQuery = useLeadsQuery();
+    const clientsQuery = useClientsQuery();
     const createMutation = useCreateLeadMutation();
     const convertMutation = useConvertLeadMutation();
     const reorderMutation = useReorderLeadsMutation();
 
     let open = $state(false);
     let form = $state({ ...blank });
+    const clients = $derived($clientsQuery.data ?? []);
+
+    // "From existing client" picker. When set, the contact fields are
+    // auto-filled and locked (toggle "edit" to override) and client_id links
+    // the lead back to the client.
+    let fromClientId = $state("");
+    let lockFromClient = $state(true);
+
+    function applyClient(id: string) {
+        fromClientId = id;
+        const c = clients.find((x) => x.id === id);
+        if (c) {
+            form = {
+                ...form,
+                name: c.name,
+                company: c.company ?? "",
+                email: c.email ?? "",
+                phone: c.phone ?? "",
+            };
+            lockFromClient = true;
+        }
+    }
+
+    function resetForm() {
+        form = { ...blank };
+        fromClientId = "";
+        lockFromClient = true;
+    }
 
     $effect(() =>
         commands.register({
@@ -95,11 +127,12 @@
                 source: form.source.trim() || null,
                 value: Number(form.value) || 0,
                 notes: form.notes.trim() || null,
+                client_id: fromClientId || null,
                 stage: "new",
                 position: (columns["new"] ?? []).length,
             });
             toast.success("Lead added");
-            form = { ...blank };
+            resetForm();
             open = false;
         } catch (e) {
             toast.error((e as Error).message);
@@ -190,9 +223,16 @@
                         >
                             <div class="flex items-start justify-between gap-2">
                                 <div class="min-w-0">
-                                    <p class="truncate text-sm font-medium">
+                                    <button
+                                        type="button"
+                                        class="block max-w-full truncate text-left text-sm font-medium hover:underline"
+                                        onclick={(e) => {
+                                            e.stopPropagation();
+                                            push(`/leads/${lead.id}`);
+                                        }}
+                                    >
                                         {lead.name}
-                                    </p>
+                                    </button>
                                     {#if lead.company}
                                         <p
                                             class="truncate text-[11px] text-vscode-description"
@@ -246,17 +286,74 @@
 
 <Dialog bind:open title="New lead" size="lg">
     <div class="grid gap-3 sm:grid-cols-2">
+        {#if clients.length > 0}
+            <Field
+                class="sm:col-span-2"
+                label="From existing client"
+                hint="Auto-fills contact details and links the lead"
+            >
+                <Select
+                    value={fromClientId}
+                    onchange={(e: Event) => {
+                        const v = (e.target as HTMLSelectElement).value;
+                        if (v) applyClient(v);
+                        else {
+                            fromClientId = "";
+                        }
+                    }}
+                >
+                    <option value="">Manual entry (not a client)</option>
+                    {#each clients as c (c.id)}
+                        <option value={c.id}>{c.name}</option>
+                    {/each}
+                </Select>
+            </Field>
+            {#if fromClientId}
+                <div class="sm:col-span-2 -mt-1">
+                    <label
+                        class="flex items-center gap-2 text-xs text-vscode-description"
+                    >
+                        <input
+                            type="checkbox"
+                            checked={!lockFromClient}
+                            onchange={(e) =>
+                                (lockFromClient = !(
+                                    e.target as HTMLInputElement
+                                ).checked)}
+                        />
+                        Edit auto-filled contact fields
+                    </label>
+                </div>
+            {/if}
+        {/if}
         <Field class="sm:col-span-2" label="Name" required>
-            <Input bind:value={form.name} />
+            <Input
+                bind:value={form.name}
+                disabled={!!fromClientId && lockFromClient}
+            />
         </Field>
-        <Field label="Company"><Input bind:value={form.company} /></Field>
+        <Field label="Company">
+            <Input
+                bind:value={form.company}
+                disabled={!!fromClientId && lockFromClient}
+            />
+        </Field>
         <Field label="Source" hint="Referral, LinkedIn…">
             <Input bind:value={form.source} />
         </Field>
-        <Field label="Email"
-            ><Input type="email" bind:value={form.email} /></Field
-        >
-        <Field label="Phone"><Input bind:value={form.phone} /></Field>
+        <Field label="Email">
+            <Input
+                type="email"
+                bind:value={form.email}
+                disabled={!!fromClientId && lockFromClient}
+            />
+        </Field>
+        <Field label="Phone">
+            <Input
+                bind:value={form.phone}
+                disabled={!!fromClientId && lockFromClient}
+            />
+        </Field>
         <Field class="sm:col-span-2" label="Estimated value">
             <Input type="number" step="0.01" bind:value={form.value} />
         </Field>
@@ -265,7 +362,13 @@
         </Field>
     </div>
     {#snippet footer()}
-        <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
+        <Button
+            variant="ghost"
+            onclick={() => {
+                open = false;
+                resetForm();
+            }}>Cancel</Button
+        >
         <Button variant="brand" onclick={create}>Create</Button>
     {/snippet}
 </Dialog>
