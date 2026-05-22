@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Invoice — vs-crm</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 15px/1.5 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    background: #f4f4f7;
+    color: #1a1a1f;
+    padding: 24px 16px;
+  }
+  .sheet {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #e3e3ea;
+    border-radius: 12px;
+    padding: 40px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    position: relative;
+    overflow: hidden;
+  }
+  .row { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .muted { color: #6b6b76; font-size: 13px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #6b6b76; margin: 0 0 6px; }
+  .brandbar { height: 4px; position: absolute; top: 0; left: 0; right: 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #ededf2; font-size: 14px; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #6b6b76; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals { margin-top: 16px; margin-left: auto; max-width: 260px; }
+  .totals .line { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+  .totals .grand { font-weight: 600; font-size: 16px; border-top: 1px solid #ededf2; margin-top: 4px; padding-top: 8px; }
+  .logo { max-height: 48px; max-width: 180px; object-fit: contain; }
+  .center { max-width: 520px; margin: 80px auto; text-align: center; }
+  .center h1 { color: #b00020; }
+  button.dl {
+    margin-top: 28px; background: #1a1a1f; color: #fff; border: 0;
+    padding: 10px 18px; border-radius: 8px; font-size: 14px; cursor: pointer;
+  }
+  button.dl:hover { opacity: .9; }
+  .spinner { text-align: center; margin: 80px auto; color: #6b6b76; }
+  .stack > * + * { margin-top: 28px; }
+</style>
+</head>
+<body>
+<div id="app"><div class="spinner">Loading invoice…</div></div>
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const app = document.getElementById("app");
+
+// Hyperscript helper — builds DOM safely (text via textContent, never raw HTML).
+function h(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k === "style") node.setAttribute("style", v);
+    else if (k.startsWith("on") && typeof v === "function")
+      node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return node;
+}
+
+function clear() {
+  while (app.firstChild) app.removeChild(app.firstChild);
+}
+function decode(v) {
+  try { return atob(decodeURIComponent(v)); } catch { return ""; }
+}
+function money(n, currency) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "USD",
+    }).format(Number(n) || 0);
+  } catch {
+    return `${currency || ""} ${(Number(n) || 0).toFixed(2)}`;
+  }
+}
+function showError(title, msg) {
+  clear();
+  app.append(
+    h("div", { class: "center" }, h("h1", {}, title), h("p", { class: "muted" }, msg)),
+  );
+}
+
+const params = new URLSearchParams(location.search);
+const projectUrl = decode(params.get("p") || "");
+const anonKey = decode(params.get("a") || "");
+const token = params.get("t") || "";
+
+if (!projectUrl || !anonKey || !token) {
+  showError("Invalid link", "This invoice link is missing required parameters.");
+} else {
+  const supa = createClient(projectUrl, anonKey, { auth: { persistSession: false } });
+  const { data, error } = await supa.rpc("crm_get_shared_invoice", { p_token: token });
+  if (error) showError("Couldn't load invoice", error.message);
+  else if (!data) showError("Link expired or not found", "This invoice link is no longer active. Ask the sender for a new one.");
+  else render(data);
+}
+
+function render(d) {
+  const inv = d.invoice || {};
+  const items = d.items || [];
+  const client = d.client || {};
+  const issuer = d.issuer || {};
+  const brand = issuer.brand_color || "#7c5cff";
+  const issuerName = issuer.company_name || issuer.display_name || "";
+
+  const header = h(
+    "div",
+    { class: "row" },
+    h(
+      "div",
+      {},
+      issuer.logo_url
+        ? h("img", { class: "logo", src: issuer.logo_url, alt: issuerName })
+        : h("h1", {}, issuerName),
+    ),
+    h(
+      "div",
+      { style: "text-align:right" },
+      h("h1", {}, `Invoice ${inv.invoice_number}`),
+      h(
+        "div",
+        { class: "muted" },
+        `Issued ${inv.issue_date}` + (inv.due_date ? ` · Due ${inv.due_date}` : ""),
+      ),
+      h("div", { class: "muted" }, `Status: ${inv.status}`),
+    ),
+  );
+
+  const parties = h(
+    "div",
+    { class: "row" },
+    h(
+      "div",
+      {},
+      h("h2", {}, "Billed to"),
+      h("div", {}, client.name || "—"),
+      client.company ? h("div", { class: "muted" }, client.company) : null,
+      client.email ? h("div", { class: "muted" }, client.email) : null,
+    ),
+    issuerName
+      ? h("div", { style: "text-align:right" }, h("h2", {}, "From"), h("div", {}, issuerName))
+      : null,
+  );
+
+  const tbody = h(
+    "tbody",
+    {},
+    items.length
+      ? items.map((it) =>
+          h(
+            "tr",
+            {},
+            h("td", {}, it.description),
+            h("td", { class: "num" }, it.quantity),
+            h("td", { class: "num" }, money(it.unit_price, inv.currency)),
+            h("td", { class: "num" }, money(it.total, inv.currency)),
+          ),
+        )
+      : h("tr", {}, h("td", { class: "muted", colspan: "4" }, "No line items.")),
+  );
+
+  const table = h(
+    "table",
+    {},
+    h(
+      "thead",
+      {},
+      h(
+        "tr",
+        {},
+        h("th", {}, "Description"),
+        h("th", { class: "num" }, "Qty"),
+        h("th", { class: "num" }, "Unit"),
+        h("th", { class: "num" }, "Total"),
+      ),
+    ),
+    tbody,
+  );
+
+  const totals = h(
+    "div",
+    { class: "totals" },
+    h("div", { class: "line" }, h("span", {}, "Subtotal"), h("span", {}, money(inv.subtotal, inv.currency))),
+    Number(inv.tax_rate)
+      ? h("div", { class: "line" }, h("span", {}, `Tax (${inv.tax_rate}%)`), h("span", {}, money(inv.tax_amount, inv.currency)))
+      : null,
+    Number(inv.discount)
+      ? h("div", { class: "line" }, h("span", {}, "Discount"), h("span", {}, `−${money(inv.discount, inv.currency)}`))
+      : null,
+    h("div", { class: "line grand" }, h("span", {}, "Total"), h("span", {}, money(inv.total, inv.currency))),
+  );
+
+  const notes = inv.notes
+    ? h("div", {}, h("h2", {}, "Notes"), h("div", { class: "muted", style: "white-space:pre-wrap" }, inv.notes))
+    : null;
+
+  const sheet = h(
+    "div",
+    { class: "sheet stack" },
+    h("div", { class: "brandbar", style: `background:${brand}` }),
+    header,
+    parties,
+    table,
+    totals,
+    notes,
+    h("button", { class: "dl", onclick: () => window.print() }, "Print / Save as PDF"),
+  );
+
+  clear();
+  app.append(sheet);
+}
+</script>
+</body>
+</html>

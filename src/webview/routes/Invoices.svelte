@@ -11,6 +11,8 @@
         Eye,
         Check,
         Mail,
+        Share2,
+        Copy,
     } from "lucide-svelte";
     import PageHeader from "../lib/components/PageHeader.svelte";
     import Card from "../lib/components/ui/Card.svelte";
@@ -42,6 +44,8 @@
         useSaveInvoiceMutation,
         useUpdateInvoiceMutation,
         useSendInvoiceMutation,
+        useShareInvoiceMutation,
+        useRevokeShareMutation,
         loadInvoiceItems,
         type Invoice,
         type InvoiceItem as Item,
@@ -52,6 +56,11 @@
     import { useInvoicesListQuery } from "../lib/queries/useInvoicesListQuery";
     import { useClientsQuery } from "../lib/queries/clients";
     import { useProjectsQuery } from "../lib/queries/projects";
+    import { config } from "../lib/stores/config.svelte";
+
+    // GitHub Pages-hosted portal that renders shared invoices read-only.
+    const PORTAL_BASE =
+        "https://abdulkader-safi.github.io/vscode-extensions-crm/portal/";
 
     const STATUSES = ["draft", "sent", "paid", "overdue"];
     const statusTone: Record<string, "muted" | "info" | "success" | "error"> = {
@@ -77,6 +86,8 @@
     const saveMutation = useSaveInvoiceMutation();
     const updateMutation = useUpdateInvoiceMutation();
     const sendMutation = useSendInvoiceMutation();
+    const shareMutation = useShareInvoiceMutation();
+    const revokeShareMutation = useRevokeShareMutation();
 
     let selected = $state(new SvelteSet<string>());
     let previewOpen = $state(false);
@@ -89,6 +100,13 @@
         recipient: string;
         subject: string;
         body: string;
+    } | null>(null);
+
+    // Share dialog state. `url` is empty until a token is minted.
+    let shareDialog = $state<{
+        target: Invoice;
+        expiry: "24h" | "7d" | "30d" | "never";
+        url: string;
     } | null>(null);
 
     let open = $state(false);
@@ -523,6 +541,71 @@
             }
         }
     }
+
+    // Share flow (Batch 14). Opens the dialog; the token is minted on demand
+    // when the user picks an expiry and clicks "Create link".
+    function expiryToTimestamp(
+        expiry: "24h" | "7d" | "30d" | "never",
+    ): string | null {
+        if (expiry === "never") return null;
+        const ms = { "24h": 864e5, "7d": 7 * 864e5, "30d": 30 * 864e5 }[expiry];
+        return new Date(Date.now() + ms).toISOString();
+    }
+
+    function buildShareUrl(token: string): string {
+        const p = btoa(config.supabaseUrl ?? "");
+        const a = btoa(config.anonKey ?? "");
+        return `${PORTAL_BASE}?p=${encodeURIComponent(p)}&a=${encodeURIComponent(a)}&t=${token}`;
+    }
+
+    function openShare(inv: Invoice) {
+        shareDialog = {
+            target: inv,
+            expiry: "30d",
+            // If a token already exists, show its URL immediately.
+            url: inv.share_token ? buildShareUrl(inv.share_token) : "",
+        };
+    }
+
+    async function createShareLink() {
+        if (!shareDialog) return;
+        if (!config.supabaseUrl || !config.anonKey) {
+            toast.error("Supabase connection not available");
+            return;
+        }
+        try {
+            const { token } = await $shareMutation.mutateAsync({
+                id: shareDialog.target.id,
+                existingToken: shareDialog.target.share_token ?? undefined,
+                expiresAt: expiryToTimestamp(shareDialog.expiry),
+            });
+            shareDialog = { ...shareDialog, url: buildShareUrl(token) };
+            toast.success("Share link ready");
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
+
+    async function revokeShareLink() {
+        if (!shareDialog) return;
+        try {
+            await $revokeShareMutation.mutateAsync({ id: shareDialog.target.id });
+            shareDialog = null;
+            toast.success("Share link revoked");
+        } catch (e) {
+            toast.error((e as Error).message);
+        }
+    }
+
+    async function copyShareUrl() {
+        if (!shareDialog?.url) return;
+        try {
+            await navigator.clipboard.writeText(shareDialog.url);
+            toast.success("Copied");
+        } catch {
+            toast.error("Copy failed — select and copy manually");
+        }
+    }
 </script>
 
 <div class="p-6">
@@ -734,6 +817,20 @@
                                         <Button
                                             size="icon"
                                             variant="ghost"
+                                            class={inv.share_token
+                                                ? "text-vscode-success"
+                                                : ""}
+                                            aria-label="Share link"
+                                            title={inv.share_token
+                                                ? "Share link active"
+                                                : "Create share link"}
+                                            onclick={() => openShare(inv)}
+                                        >
+                                            <Share2 class="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
                                             aria-label="Edit"
                                             onclick={() => openEdit(inv)}
                                         >
@@ -832,6 +929,76 @@
                 onclick={sendEmail}
             >
                 Send
+            </Button>
+        {/snippet}
+    </Dialog>
+{/if}
+
+{#if shareDialog}
+    <Dialog
+        open
+        title="Share invoice {shareDialog.target.invoice_number}"
+        size="md"
+        onClose={() => (shareDialog = null)}
+    >
+        <div class="space-y-3">
+            <Field label="Link expires">
+                <Select bind:value={shareDialog.expiry}>
+                    <option value="24h">In 24 hours</option>
+                    <option value="7d">In 7 days</option>
+                    <option value="30d">In 30 days</option>
+                    <option value="never">Never</option>
+                </Select>
+            </Field>
+            {#if shareDialog.url}
+                <Field label="Public link">
+                    <div class="flex items-center gap-2">
+                        <Input value={shareDialog.url} readonly />
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            aria-label="Copy link"
+                            onclick={copyShareUrl}
+                        >
+                            <Copy class="h-4 w-4" />
+                        </Button>
+                    </div>
+                </Field>
+                <p class="text-xs text-vscode-description">
+                    Anyone with this link can view a read-only copy of the
+                    invoice — no sign-in needed. Changing the expiry above and
+                    clicking "Update link" re-applies it. Revoke anytime.
+                </p>
+            {:else}
+                <p class="text-xs text-vscode-description">
+                    Generates a tokenized public link your client can open
+                    without an account. The link embeds your Supabase project
+                    URL + anon key (anon keys are safe to expose) and a unique
+                    token; only this one invoice is readable, gated by a
+                    SECURITY DEFINER function.
+                </p>
+            {/if}
+        </div>
+        {#snippet footer()}
+            {#if shareDialog?.url}
+                <Button
+                    variant="destructive"
+                    onclick={revokeShareLink}
+                    loading={$revokeShareMutation.isPending}
+                >
+                    Revoke
+                </Button>
+            {/if}
+            <Button variant="ghost" onclick={() => (shareDialog = null)}>
+                Close
+            </Button>
+            <Button
+                variant="brand"
+                onclick={createShareLink}
+                loading={$shareMutation.isPending}
+                disabled={$shareMutation.isPending}
+            >
+                {shareDialog?.url ? "Update link" : "Create link"}
             </Button>
         {/snippet}
     </Dialog>

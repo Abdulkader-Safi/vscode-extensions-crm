@@ -67,6 +67,22 @@ For Google / GitHub OAuth, also configure the provider in **Authentication → P
 
 Most CRMs lock you into their database. vs-crm gives you full ownership: you can query the tables directly with `psql`, back them up however you like, run other tools against them, and the extension never proxies your data.
 
+## Public invoice portal (optional)
+
+The Share button on an invoice creates a tokenized link your client can open without signing in. It points at a static page in [`docs/portal/`](./docs/portal) served by GitHub Pages.
+
+To enable it: in your fork's repo settings, **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`**. The portal lives at `https://<you>.github.io/<repo>/portal/`. Update `PORTAL_BASE` in `src/webview/routes/Invoices.svelte` if your URL differs.
+
+The page reads the project URL + anon key + token from the share URL and calls a `SECURITY DEFINER` function (`crm_get_shared_invoice`) that returns only the one tokenized invoice — anon can't enumerate others. Anon keys are designed to be publicly embeddable, so a single deployed portal serves every vs-crm user's share links.
+
+## Invoice email (optional)
+
+Each invoice has an Email button backed by a Supabase Edge Function in [`supabase/functions/send-invoice/`](./supabase/functions/send-invoice). Deploy it + add a Resend API key to enable; see that function's README. Until deployed, the button shows a friendly "not configured" message.
+
+## Recurring invoices (optional)
+
+Mark an invoice as a recurring template in the editor; a daily `pg_cron` job (`crm_run_recurring_invoices`) clones it on schedule. Requires enabling the `pg_cron` extension in **Supabase Dashboard → Database → Extensions** — without it, the migration still applies but templates won't auto-spawn (you can run the function manually).
+
 ## Schema
 
 The extension provisions:

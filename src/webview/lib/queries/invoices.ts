@@ -39,6 +39,10 @@ export type Invoice = {
   parent_invoice_id?: string | null;
   recurrence?: InvoiceRecurrence | null;
   next_run_at?: string | null;
+  // Batch 14 — public client portal. When share_token is set the invoice is
+  // viewable read-only at the portal URL until share_expires_at.
+  share_token?: string | null;
+  share_expires_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -271,6 +275,48 @@ export function useSendInvoiceMutation() {
     onSuccess: () => {
       // Refresh communication_logs cache (client detail timelines etc).
       client.invalidateQueries({ queryKey: ["communication_logs"] });
+    },
+  });
+}
+
+// Share an invoice (Batch 14) — mints a share_token (or reuses the existing
+// one) and sets share_expires_at. Returns the token so the route can build the
+// portal URL. Authenticated UPDATE; RLS scopes it to the owner.
+export function useShareInvoiceMutation() {
+  const client = useQueryClient();
+  return createMutation<
+    { token: string; expiresAt: string | null },
+    Error,
+    { id: string; existingToken?: string | null; expiresAt: string | null }
+  >({
+    mutationFn: async (vars) => {
+      const token = vars.existingToken ?? crypto.randomUUID();
+      const { error } = await getSupabase()
+        .from("invoices")
+        .update({ share_token: token, share_expires_at: vars.expiresAt })
+        .eq("id", vars.id);
+      if (error) throw error;
+      return { token, expiresAt: vars.expiresAt };
+    },
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: qk.invoices() });
+    },
+  });
+}
+
+// Revoke a share link — clears token + expiry so the portal returns "not found".
+export function useRevokeShareMutation() {
+  const client = useQueryClient();
+  return createMutation<void, Error, { id: string }>({
+    mutationFn: async (vars) => {
+      const { error } = await getSupabase()
+        .from("invoices")
+        .update({ share_token: null, share_expires_at: null })
+        .eq("id", vars.id);
+      if (error) throw error;
+    },
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: qk.invoices() });
     },
   });
 }
